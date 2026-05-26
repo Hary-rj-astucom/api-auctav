@@ -248,11 +248,24 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui'){
   const browser = await puppeteer.launch({ 
     headless: true,
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    args: ['--no-sandbox', '--disable-dev-shm-usage']
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
   const page = await browser.newPage();
-  await page.goto(`https://www.letrot.com/courses/${slug}`, { waitUntil: 'networkidle2' });
+
+  // Masquer navigator.webdriver
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
+  });
+
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
+
+  await page.goto(`https://www.letrot.com/courses/${slug}`, { waitUntil: 'networkidle2', timeout: 30000 });
+
+  // Attendre que les blocs soient rendus
+  await page.waitForSelector('[data-test-id="meeting-view-item"]', { timeout: 15000 }).catch(() => console.warn('⚠️ Blocs non trouvés'));
   
   const html = await page.content();
   await browser.close();
