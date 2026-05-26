@@ -246,7 +246,7 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui'){
     : date;
 
   const browser = await puppeteer.launch({ 
-    headless: false,
+    headless: true,
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage']
   });
