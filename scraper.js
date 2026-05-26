@@ -245,11 +245,19 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui'){
     ? dateOrSlug
     : date;
 
-  const browser = await puppeteer.launch({ 
+ /* const browser = await puppeteer.launch({ 
     headless: false,
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage']
-  });
+  });*/
+
+
+
+
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+});
 
   const page = await browser.newPage();
   await page.goto(`https://www.letrot.com/courses/${slug}`, { waitUntil: 'networkidle2' });
@@ -302,11 +310,17 @@ async function getCourseEngages(date, reunion_id, qualif_id) {
   const url = `https://www.letrot.com/courses/qualifications/${date}/${reunion_id}/${qualif_id}`;
 
   // Puppeteer pour attendre le rendu JS
-  const browser = await puppeteer.launch({ 
+  /*const browser = await puppeteer.launch({ 
     headless: 'new',
     executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage']
-  });
+  });*/
+
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+});
+
 
   let html = '';
   try {

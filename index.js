@@ -3,7 +3,7 @@ const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQu
 const { getCacheWithTTL, setCache, secondsUntilMidnight } = require('./cache');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3003;
 
 app.use(express.json());
 app.use((req, res, next) => {
