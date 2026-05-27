@@ -49,6 +49,8 @@ app.get('/api/partants', async (req, res) => {
     console.log(`[SCRAPE] partants ${date}`);
     const reunions = await getDayProgram(dateOrSlug);
 
+    console.log(`${reunions.length} reunions trouvees`);
+
     // ── Step 1: fetch all courses in parallel (capped) ──────────────────────
     const courseTasks = [];
     for (const reunion of reunions) {
@@ -74,8 +76,8 @@ app.get('/api/partants', async (req, res) => {
       }
       const { reunion, course, data: courseData } = r.value;
 
-      let hippodrome = reunion.hippodrome || courseData.hippodrome;
-      const raceCode  = hippodrome.split('\n')[0].trim();
+      let hippodrome = courseData.hippodrome || reunion.hippodrome;
+      const raceCode  = courseData.reunion_code;
       const hippoName = hippodrome.split('\n')[1]?.trim() || hippodrome.trim();
 
       for (const partant of courseData.partants) {

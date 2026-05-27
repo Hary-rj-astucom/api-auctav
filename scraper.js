@@ -101,50 +101,100 @@ function resolveDate(dateOrSlug) {
  */
 async function getDayProgram(dateOrSlug = 'aujourd-hui') {
   const date = resolveDate(dateOrSlug);
-  const slug = ['aujourd-hui','demain','hier'].includes(dateOrSlug)
+  const slug = ['aujourd-hui', 'demain', 'hier'].includes(dateOrSlug)
     ? dateOrSlug
     : date;
 
-  const $ = await fetchPage(`/courses/${slug}`);
+  // Puppeteer pour charger le JS
+  const browser = await puppeteer.launch({
+    headless: true,
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--disable-gpu']
+  });
 
+  let html = '';
+  try {
+    const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    await page.goto(`https://www.letrot.com/courses/${slug}`, {
+      waitUntil: 'networkidle2',
+      timeout: 30000
+    });
+
+    // Attendre que les blocs soient rendus
+    await page.waitForSelector('[data-test-id="meeting-view-item"]', { timeout: 15000 });
+
+    html = await page.content();
+  } finally {
+    await browser.close();
+  }
+
+  const $ = cheerio.load(html);
   const reunions = [];
+  const seenReunions = new Set();
+  const seenQualifs = new Set();
 
-  $('a[href*="/courses/programme/"]').each((_, el) => {
-    const href = $(el).attr('href') || '';
+  // ── Courses normales ──────────────────────────────────────────────────────
+  $('[data-test-id="meeting-view-item"]').each((_, block) => {
+    const $block = $(block);
+
+    // Chercher un lien /courses/programme/ dans ce block
+    const $progLink = $block.find('a[href*="/courses/programme/"]').first();
+    if (!$progLink.length) return;
+
+    const href = $progLink.attr('href') || '';
     const match = href.match(/\/courses\/programme\/[\d-]+\/(\d+)/);
     if (!match) return;
 
     const reunion_id = match[1];
-    const text = $(el).text();
+    if (seenReunions.has(reunion_id)) return;
+    seenReunions.add(reunion_id);
 
-    const hippoMatch = text.match(/R\d+\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜ\-\s]+?)(?:\s+terminée|\s+\d+courses|$)/i);
-    const hippodrome = hippoMatch ? hippoMatch[1].trim() : '';
+    // Hippodrome depuis le <h2> dans le lien
+    const hippodromeVal = $progLink.find('h2').text().trim().toUpperCase()
+      || $progLink.text().replace(/R\d+\s*/, '').trim().toUpperCase();
 
-    const heureMatch = text.match(/(\d{2}:\d{2})/);
-    const heure = heureMatch ? heureMatch[1] : '';
+    // Heure depuis data-updatable="heureReunion"
+    const heure = $block.find('[data-updatable="heureReunion"]').first().text().trim() || '';
 
-    reunions.push({ reunion_id, hippodrome, date, heure, courses: [] });
-  });
+    let hippodrome = hippodromeVal.replace(heure, '');
 
-  $(`a[href*="/courses/${date}/"]`).each((_, el) => {
-    const href = $(el).attr('href') || '';
-    const match = href.match(/\/courses\/([\d-]+)\/(\d+)\/(\d+)$/);
-    if (!match) return;
+    const reunion = { reunion_id, hippodrome, date, heure, courses: [], type: 'course' };
+    reunions.push(reunion);
 
-    const [, courseDate, reunion_id, num] = match;
-    const reunion = reunions.find(r => r.reunion_id === reunion_id);
-    if (!reunion) return;
+    // Courses du bloc: liens /courses/YYYY-MM-DD/{reunion_id}/{num}
+    $block.find(`a[href*="/courses/${date}/${reunion_id}/"]`).each((_, el) => {
+      const courseHref = $(el).attr('href') || '';
+      const courseMatch = courseHref.match(/\/courses\/([\d-]+)\/(\d+)\/(\d+)$/);
+      if (!courseMatch) return;
 
-    if (reunion.courses.find(c => c.num === num)) return;
+      const num = courseMatch[3];
+      if (reunion.courses.find(c => c.num === num)) return;
 
-    const heureMatch = $(el).text().match(/(\d{2}:\d{2})/);
-    const heure = heureMatch ? heureMatch[1] : '';
+      // Discipline depuis icon-monte ou icon-attele
+      let discipline = 'Attelé';
+      const $el = $(el);
+      if ($el.find('.icon-monte').length) discipline = 'Monté';
+      else if ($el.find('.icon-attele').length) discipline = 'Attelé';
 
-    reunion.courses.push({
-      num,
-      heure,
-      url: `/courses/${courseDate}/${reunion_id}/${num}`,
-      type: 'course',
+      // Heure de la course
+      const heureC = $el.find('[data-updatable="heureCourse"]').text().trim() || '';
+
+      console.log(`✅ course R${reunions.length}C${num} ${reunion.hippodrome} ${heureC}`);
+
+      reunion.courses.push({
+        num,
+        heure: heureC,
+        url:   `/courses/${date}/${reunion_id}/${num}`,
+        code:  `R${reunions.length}C${num}`,
+        discipline,
+        type:  'course',
+      });
     });
   });
 
@@ -156,42 +206,76 @@ async function getDayProgram(dateOrSlug = 'aujourd-hui') {
  * Returns: { prix, hippodrome, discipline, date, distance, dotation, partants[] }
  */
 async function getCoursePartants(date, reunion_id, num_course) {
-  const path = `/courses/${date}/${reunion_id}/${num_course}`;
-  const $ = await fetchPage(path);
+  const url = `https://www.letrot.com/courses/${date}/${reunion_id}/${num_course}`;
 
-  const title = $('title').text();
-  const prixMatch = title.match(/C\d+\s+([^:]+?)\s*:/);
-  const prix = prixMatch ? prixMatch[1].trim() : '';
-
-  let hippodrome = '';
-  $('a[href*="/courses/programme/"]').each((_, el) => {
-    const t = $(el).text().trim();
-    if (t && !t.match(/^\d/)) hippodrome = t;
+  const browser = await puppeteer.launch({
+    headless: true,
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
+  let html = '';
+  try {
+    const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Attendre que le tableau des partants soit chargé
+    await page.waitForSelector('a[href*="/stats/chevaux/"]', { timeout: 15000 })
+      .catch(() => console.warn('⚠️ Aucun partant trouvé'));
+
+    html = await page.content();
+  } finally {
+    await browser.close();
+  }
+
+  const $ = cheerio.load(html);
+
+  // Reunion code + Hippodrome — depuis <div translate="no">R2\n        CAEN</div>
+  let hippodrome   = '';
+  let reunion_code = '';
+  $('[translate="no"]').each((_, el) => {
+    const t = $(el).text().trim().replace(/\s+/g, ' '); // "R2 CAEN"
+    const match = t.match(/^(R\d+)\s+(.+)$/);
+    if (match) {
+      reunion_code = match[1]; // "R2"
+      hippodrome   = match[2]; // "CAEN"
+      return false;
+    }
+  });
+
+  // Discipline — depuis la classe CSS icon-monte ou icon-attele
   let discipline = 'Attelé';
-  $('*').each((_, el) => {
-    const t = $(el).text();
-    if (t.includes('Monté'))  { discipline = 'Monté';    return false; }
-    if (t.includes('Attelé')) { discipline = 'Attelé';   return false; }
-    if (t.includes('Plat'))   { discipline = 'Plat';     return false; }
-    if (t.includes('Haie') || t.includes('Steeple')) { discipline = 'Obstacle'; return false; }
-  });
+  if ($('.icon-monte').length)   discipline = 'Monté';
+  else if ($('.icon-attele').length) discipline = 'Attelé';
 
-  const pageText = $('body').text();
-  const distMatch = pageText.match(/(\d{3,4})m/);
-  const distance = distMatch ? distMatch[1] : '';
-  const dotMatch = pageText.match(/([\d\s]+)\s*€/);
-  const dotation = dotMatch ? dotMatch[1].replace(/\s/g, '') : '';
+  // Distance + Dotation + nb_partants — depuis "Course F  - 12 partants - 2450m - 21000€"
+  const courseInfo = $('[class*="self-center"]').text().trim();
+  const distMatch  = courseInfo.match(/(\d{3,4})m/);
+  const dotMatch   = courseInfo.match(/([\d\s]+)\s*€/);
+  const nbMatch    = courseInfo.match(/(\d+)\s+partants/);
+  const distance   = distMatch ? distMatch[1] : '';
+  const dotation   = dotMatch  ? dotMatch[1].replace(/\s/g, '') : '';
+  const nb_partants = nbMatch  ? parseInt(nbMatch[1]) : 0;
 
+  // Prix — depuis le h1: "C1 PRIX DE BREHAL"
+  const prix = $('h1[translate="no"]').text().trim().replace(/^C\d+\s+/, '');
+
+  // Partants — liens /stats/chevaux/{slug}/{horse_id}/courses
   const partants = [];
   $('a[href*="/stats/chevaux/"]').each((_, el) => {
     const href = $(el).attr('href') || '';
-    const nom = $(el).text().trim().toUpperCase();
+    const nom  = $(el).text().trim().toUpperCase();
+
     const idMatch = href.match(/\/stats\/chevaux\/([^/]+)\/([^/]+)\/courses/);
     if (!idMatch || !nom || nom.length < 2) return;
 
-    const slug = idMatch[1];
+    const slug     = idMatch[1];
     const horse_id = idMatch[2];
 
     if (partants.find(p => p.horse_id === horse_id)) return;
@@ -204,8 +288,11 @@ async function getCoursePartants(date, reunion_id, num_course) {
     });
   });
 
-  return { prix, hippodrome, discipline, date, distance, dotation, partants };
+  console.log(`✅ ${partants.length} partants trouvés — ${prix} (${hippodrome})`);
+
+  return { prix, reunion_code, hippodrome, discipline, date, distance, dotation, nb_partants, partants };
 }
+
 
 /**
  * Scrape a horse's detail page: naissance, père, mère, réduction, etc.
@@ -252,6 +339,7 @@ async function getHorseDetails(slug, horse_id) {
   return { nom, naissance, sexe, pere, mere, gains, record, reduction, reduction_date, reduction_lieu, discipline_qualif };
 }
 
+
 /**
  * List of the qualifications
  * Returns: [{ reunion_id, hippodrome, date, heure, courses: [{num, heure, url}] }]
@@ -264,7 +352,8 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui') {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -336,7 +425,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
