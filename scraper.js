@@ -466,9 +466,18 @@ async function getCourseEngages(date, reunion_id, valif_id) {
   const distance = distMatch ? distMatch[1] : '';
 
   const engages = [];
-  $('a[href*="/stats/chevaux/"]').each((_, el) => {
-    const href = $(el).attr('href') || '';
-    const nom  = $(el).text().trim().toUpperCase();
+  $('tbody tr').each((_, row) => {
+    const $row = $(row);
+
+    // Lot — cel-0
+    const lot = $row.find('.cel-0').first().text().trim();
+
+    // Lien cheval — cel-2
+    const $link = $row.find('.cel-2 a[href*="/stats/chevaux/"]').first();
+    if (!$link.length) return;
+
+    const href = $link.attr('href') || '';
+    const nom  = $link.text().trim().toUpperCase();
 
     const idMatch = href.match(/\/stats\/chevaux\/([^/]+)\/([^/]+)\/courses/);
     if (!idMatch || !nom || nom.length < 2) return;
@@ -478,11 +487,21 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
     if (engages.find(p => p.horse_id === horse_id)) return;
 
+    // SA (sexe + âge) — cel-3
+    const sa = $row.find('.cel-3').text().trim(); // ex: "F4", "H3", "M2"
+
+    // Discipline — cel-7
+    const disciplineRaw = $row.find('.cel-7').text().trim(); // "Attelé", "Monté", ou vide
+    const discipline = disciplineRaw || 'Attelé';
+
     engages.push({
-      nom,
-      slug,
-      horse_id,
-      cheval_url: `/stats/chevaux/${slug}/${horse_id}/courses`,
+        nom,
+        slug,
+        horse_id,
+        lot,
+        sexe_age: sa,
+        discipline,
+        cheval_url: `/stats/chevaux/${slug}/${horse_id}/courses`,
     });
   });
 

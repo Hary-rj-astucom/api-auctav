@@ -316,10 +316,10 @@ app.get('/api/engages', async (req, res) => {
         naissance:      details.naissance      || '',
         date,
         hippodrome:     reunion.hippodrome     || courseData.hippodrome,
-        lot:            course.num,
+        lot:            partant.lot            || '',
         reduction:      details.reduction      || '',
         reduction_date: details.reduction_date || '',
-        discipline:     courseData.discipline,
+        discipline:     partant.discipline     || '',
         urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
       });
     }
