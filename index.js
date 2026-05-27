@@ -26,6 +26,7 @@ async function fetchHorse(slug, horse_id) {
 
   const data = await withRetry(() => getHorseDetails(slug, horse_id));
   //setCache(cacheKey, data, 86400);
+  console.log(`Horse: ${data.nom} ${data.naissance} ${data.sexe} ${data.discipline_qualif}`);
   return data;
 }
 
