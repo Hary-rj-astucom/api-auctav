@@ -32,7 +32,7 @@ async function getPartantForToday(){
     const cached = getCacheWithTTL(cacheKey, TTL);
     if (cached) {
         console.log(`[CACHE] partants ${date}`);
-        return res.json(cached);
+        return ;
     }
 
     try {
@@ -137,7 +137,7 @@ async function getPartantRPForToday(){
     const cached = getCacheWithTTL(cacheKey, TTL);
     if (cached) {
         console.log(`[CACHE] partantsRP ${date}`);
-        return res.json(cached);
+        return ;
     }
 
     try {
