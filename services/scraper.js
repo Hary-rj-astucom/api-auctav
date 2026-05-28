@@ -510,10 +510,126 @@ async function getCourseEngages(date, reunion_id, valif_id) {
   return { prix: 'QUALIFICATION', hippodrome, discipline, date, distance, engages };
 }
 
+/**
+ * get perf cheval
+ * exemple of URL = https://www.equidia.fr/chevaux/harry-angel
+ */
+async function getHorsePerf(urlPerfs) {
+    const browser = await puppeteer.launch({
+        headless: true,
+        executablePath:
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        args: [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu'
+        ]
+    });
+
+    try {
+        const page = await browser.newPage();
+
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36');
+        await page.setExtraHTTPHeaders({'Accept-Language': 'fr-FR,fr;q=0.9'});
+
+        await page.goto(urlPerfs, {
+            waitUntil: 'networkidle2',
+            timeout: 30000
+        });
+
+        // attendre que les courses soient rendues
+        await page.waitForSelector('.link-course.clickable',{ timeout: 15000 });
+
+        // attendre que les position ne sont pas la
+        await page.waitForSelector('.classm',{ timeout: 15000 }); 
+
+        const html = await page.content();
+
+        const $ = cheerio.load(html);
+        const performances = [];
+
+        console.log("element place length Html: " + $('.classm').length);
+        console.log("element course length Html: " + $('.link-course.clickable').length);
+
+        $('tr.customable-table--row.collapse-row').each((_, row) => {
+          // -------------------------
+          // COURSE
+          // -------------------------
+          const courseEl = $(row).find('.link-course.clickable');
+
+          if (!courseEl.length) return;
+
+          const rawText = courseEl.text().replace(/\s+/g, ' ').trim();
+
+          // nom course
+          const parts = rawText.split(' - ').map(v => v.trim());
+
+          const prix = parts[0] || null;
+
+          // -------------------------
+          // DATE
+          // -------------------------
+          const dateMatch = rawText.match(/(\d{2})\/(\d{2})\/(\d{2})/);
+
+          let date = null;
+
+          if (dateMatch) {
+              const [, day, month, year] = dateMatch;
+              date = `20${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+
+          // -------------------------
+          // LINK
+          // -------------------------
+          const raceMatch = rawText.match(/R(\d+)C(\d+)/);
+          let link = null;
+
+          if (raceMatch && date) {
+              const [, race, course] = raceMatch;
+              link = `https://www.equidia.fr/courses/${date}/R${race}/C${course}`;
+          }
+
+          // -------------------------
+          // PLACE = ligne précédente
+          // -------------------------
+          const prevRow = $(row).prev('tr.customable-table--row');
+          const placeText = prevRow.find('.classm').text().replace(/\s+/g, ' ').trim();
+          const place = parseInt(placeText, 10) || null;
+
+          // -------------------------
+          //  Hippodromme
+          // -------------------------
+          const hippodrome = prevRow.find('.hippodrome').text().replace(/\s+/g, ' ').trim();
+
+          // -------------------------
+          //  Prix
+          // -------------------------
+          const prixVal = prevRow.find('.prix').text().replace(/\s+/g, ' ').trim();
+
+          performances.push({
+              date,
+              place,
+              prix : `${prixVal} (${hippodrome})`,
+              link
+          });
+
+          console.log({
+              date,
+              place,
+              prix: `${prixVal} (${hippodrome})`,
+              link
+          });
+      });
+      return performances;
+    } finally {
+        await browser.close();
+    }
+}
 
 
 module.exports = {
   getDayProgram, getCoursePartants, getHorseDetails, resolveDate,
   getCourseEngages, getDayQualification,
-  withRetry, poolAll,
+  withRetry, poolAll, getHorsePerf,
 };

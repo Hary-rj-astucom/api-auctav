@@ -142,6 +142,7 @@ Fiche complète d'un cheval.
 | `/api/engages`     | 1 heure             |
 | `/api/programme`   | Jusqu'à minuit      |
 | `/api/cheval`      | 24 heures           |
+| `/api/horseperf`   | get perf hors       |
 
 Le cache est double : **mémoire (node-cache)** + **fichiers JSON** dans `/cache/`.
 Au redémarrage, le cache fichier est relu automatiquement.

@@ -1,5 +1,5 @@
 const express = require('express');
-const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll } = require('./services/scraper');
+const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll, getHorsePerf } = require('./services/scraper');
 const { getCacheWithTTL, setCache, secondsUntilMidnight } = require('./services/cache');
 
 const app = express();
@@ -121,6 +121,21 @@ app.get('/api/programme', async (req, res) => {
     setCache(cacheKey, data, TTL);
     res.json(data);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENDPOINT 6 – Programme du jour (réunions + courses)
+// GET /api/horseperf?url=https://www.equidia.fr/chevaux/harry-angel
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/horseperf', async (req, res) => {
+  try {
+    console.log(req.query.url);
+    const data = await getHorsePerf(req.query.url);
+    res.json(data);
+  } catch (err) {
+    console.log(err);
     res.status(500).json({ error: err.message });
   }
 });
