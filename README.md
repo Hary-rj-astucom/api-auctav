@@ -175,3 +175,9 @@ Au redémarrage, le cache fichier est relu automatiquement.
 ```env
 PORT=3000   # Port du serveur (défaut: 3000)
 ```
+
+## Background executable
+A partir de la racine 
+`node .\executable\partant.js`
+`node .\executable\partantRp.js`
+`node .\executable\engage.js`

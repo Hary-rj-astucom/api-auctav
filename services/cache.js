@@ -6,7 +6,7 @@ const path = require('path');
 const memCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 // Cache directory for file persistence
-const CACHE_DIR = path.join(__dirname, 'cache');
+const CACHE_DIR = path.join(__dirname, '../cache');
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 /**
