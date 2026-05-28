@@ -517,8 +517,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 async function getHorsePerf(urlPerfs) {
     const browser = await puppeteer.launch({
         headless: true,
-        executablePath:
-            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        //executablePath: '/usr/bin/google-chrome',
+        executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         args: [
             '--no-sandbox',
             '--disable-dev-shm-usage',
