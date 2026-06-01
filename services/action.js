@@ -239,87 +239,107 @@ async function getPartantRPForToday(){
 /**
  * Get the qualification of today
  */
-async function getEngageForToday(){
+async function getEngageForToday() {
 
-    const dateOrSlug = 'aujourd-hui';
-    const date = resolveDate(dateOrSlug);
+    const dateOrSlugs = ['aujourd-hui', 'demain'];
+
+    //set cache
+    const dateOrSlugcache = 'aujourd-hui';
+    const date = resolveDate(dateOrSlugcache);
     const cacheKey = `engages_${date}`;
 
+    // ── Cache unique pour les deux jours ──────────────────────────────────────
     const cached = getCacheWithTTL(cacheKey, 3600);
     // if (cached) {
-    //     console.log(`[CACHE] engages ${date}`);
-    //     return res.json(cached);
+    //     console.log(`engages_${date}`);
+    //     return cached;
     // }
 
     try {
-        console.log(`[SCRAPE] engages ${date}`);
-        const reunions = await getDayQualification(dateOrSlug);
+        console.log(`[SCRAPE] engages ${date} + demain`);
 
-        // ── Step 1: fetch all qualification courses in parallel ───────────────────
-        const qualifTasks = [];
-        for (const reunion of reunions) {
-            for (const course of reunion.courses.filter(c => c.type === 'qualification')) {
-            qualifTasks.push({ reunion, course });
-            }
-        }
+        const dayResults = await Promise.allSettled(
+            dateOrSlugs.map(async (dateOrSlug) => {
+                const date = resolveDate(dateOrSlug);
+                const reunions = await getDayQualification(dateOrSlug);
 
-        const qualifResults = await poolAll(
-            qualifTasks.map(({ reunion, course }) => () =>
-            withRetry(() => getCourseEngages(date, reunion.reunion_id, course.qualif_id))
-                .then(data => ({ reunion, course, data }))
-            ),
-            COURSE_CONCURRENCY
+                // ── Step 1: qualification courses ─────────────────────────────
+                const qualifTasks = [];
+                for (const reunion of reunions) {
+                    for (const course of reunion.courses.filter(c => c.type === 'qualification')) {
+                        qualifTasks.push({ reunion, course });
+                    }
+                }
+
+                const qualifResults = await poolAll(
+                    qualifTasks.map(({ reunion, course }) => () =>
+                        withRetry(() => getCourseEngages(date, reunion.reunion_id, course.qualif_id))
+                            .then(data => ({ reunion, course, data }))
+                    ),
+                    COURSE_CONCURRENCY
+                );
+
+                // ── Step 2: engagé jobs ───────────────────────────────────────
+                const engageJobs = [];
+                for (const r of qualifResults) {
+                    if (r.status === 'rejected') { console.warn(`  ✗ Qualif: ${r.reason?.message}`); continue; }
+                    const { reunion, course, data: courseData } = r.value;
+
+                    if (!courseData.prix.toUpperCase().includes('QUALIF')) continue;
+
+                    for (const partant of courseData.engages) {
+                        engageJobs.push({ partant, courseData, reunion, course });
+                    }
+                }
+
+                // ── Step 3: horse details ─────────────────────────────────────
+                const horseResults = await poolAll(
+                    engageJobs.map(job => () =>
+                        fetchHorse(job.partant.slug, job.partant.horse_id)
+                            .then(details => ({ ...job, details }))
+                            .catch(err => {
+                                console.warn(`  ✗ Cheval ${job.partant.nom}: ${err.message}`);
+                                return { ...job, details: {} };
+                            })
+                    ),
+                    HORSE_CONCURRENCY
+                );
+
+                // ── Step 4: assemble ──────────────────────────────────────────
+                const dayResult = { [date]: [] };
+                for (const r of horseResults) {
+                    if (r.status === 'rejected') continue;
+                    const { partant, courseData, reunion, details } = r.value;
+
+                    dayResult[date].push({
+                        nom:            partant.nom,
+                        naissance:      details.naissance      || '',
+                        date,
+                        hippodrome:     reunion.hippodrome     || courseData.hippodrome,
+                        lot:            partant.lot            || '',
+                        reduction:      details.reduction      || '',
+                        reduction_date: details.reduction_date || '',
+                        discipline:     partant.discipline     || '',
+                        urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
+                    });
+                }
+
+                console.log(`[DONE] ${date} — ${dayResult[date].length} partants`);
+                return dayResult;
+            })
         );
 
-        // ── Step 2: collect engagé jobs ───────────────────────────────────────────
-        const engageJobs = [];
-        for (const r of qualifResults) {
-            if (r.status === 'rejected') { console.warn(`  ✗ Qualif: ${r.reason?.message}`); continue; }
-            const { reunion, course, data: courseData } = r.value;
-
-            if (!courseData.prix.toUpperCase().includes('QUALIF')) continue;
-
-            for (const partant of courseData.engages) {
-            engageJobs.push({ partant, courseData, reunion, course });
-            }
+        // ── Fusionner + mettre en cache en une seule fois ─────────────────────
+        const merged = {};
+        for (const r of dayResults) {
+            if (r.status === 'rejected') { console.warn(`✗ Jour échoué :`, r.reason?.message); continue; }
+            Object.assign(merged, r.value);
         }
 
-        // ── Step 3: fetch horse details in parallel ───────────────────────────────
-        const horseResults = await poolAll(
-            engageJobs.map(job => () =>
-            fetchHorse(job.partant.slug, job.partant.horse_id)
-                .then(details => ({ ...job, details }))
-                .catch(err => {
-                console.warn(`  ✗ Cheval ${job.partant.nom}: ${err.message}`);
-                return { ...job, details: {} };
-                })
-            ),
-            HORSE_CONCURRENCY
-        );
-
-        // ── Step 4: assemble result ───────────────────────────────────────────────
-        const result = {};
-        for (const r of horseResults) {
-            if (r.status === 'rejected') continue;
-            const { partant, courseData, reunion, course, details } = r.value;
-
-            if (!result[date]) result[date] = [];
-            result[date].push({
-            nom:            partant.nom,
-            naissance:      details.naissance      || '',
-            date,
-            hippodrome:     reunion.hippodrome     || courseData.hippodrome,
-            lot:            partant.lot            || '',
-            reduction:      details.reduction      || '',
-            reduction_date: details.reduction_date || '',
-            discipline:     partant.discipline     || '',
-            urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
-            });
-        }
-
-        setCache(cacheKey, result, 3600);
-        
-        console.log('Get engage for today: finished !!!');
+        setCache(cacheKey, merged, 3600);
+        console.log(`[CACHE SET] engages_${date} — ${Object.keys(merged).join(', ')}`);
+        console.log('getEngageForTodayAndTomorrow: finished !!!');
+        return merged;
 
     } catch (err) {
         console.error(err);

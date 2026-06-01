@@ -108,8 +108,8 @@ async function getDayProgram(dateOrSlug = 'aujourd-hui') {
   // Puppeteer pour charger le JS
   const browser = await puppeteer.launch({
     headless: true,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: '/usr/bin/google-chrome',
+    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--disable-gpu']
   });
 
@@ -210,8 +210,8 @@ async function getCoursePartants(date, reunion_id, num_course) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: '/usr/bin/google-chrome',
+    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
@@ -352,8 +352,8 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui') {
 
   const browser = await puppeteer.launch({
     headless: true,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: '/usr/bin/google-chrome',
+    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -425,8 +425,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: '/usr/bin/google-chrome',
+    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -436,31 +436,71 @@ async function getCourseEngages(date, reunion_id, valif_id) {
   });
 
   let html = '';
+  const MAX_RETRIES = 3;
+
   try {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // ── 1. Retry loop ──────────────────────────────────────────────────────────
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`🔄 Tentative ${attempt}/${MAX_RETRIES} — ${url}`);
 
-    await page.waitForSelector('a[href*="/stats/chevaux/"]', { timeout: 15000 })
-      .catch(() => console.warn('⚠️ Aucun lien cheval trouvé après attente'));
+        // networkidle2 = au plus 2 requêtes réseau pendant 500ms → page vraiment chargée
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
 
-    html = await page.content();
+        // ── 2. Attente intelligente : tbody visible ET au moins 1 ligne ────────
+        await page.waitForFunction(
+          () => {
+            const rows = document.querySelectorAll('tbody tr');
+            return rows.length > 0;
+          },
+          { timeout: 20000 }
+        );
+
+        // ── 3. Double-check : attendre que les liens chevaux soient présents ──
+        //    Si après 10s toujours pas de lien → on accepte quand même (qualification vide possible)
+        await page.waitForSelector('a[href*="/stats/chevaux/"]', { timeout: 10000 })
+          .catch(() => console.warn('⚠️ Aucun lien cheval — page peut-être vide ou structure différente'));
+
+        // ── 4. Scroll pour forcer le rendu des lignes lazy ────────────────────
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await new Promise(r => setTimeout(r, 800)); // petit délai post-scroll
+
+        html = await page.content();
+
+        // Validation rapide avant de sortir du retry
+        if (html.includes('/stats/chevaux/') || html.includes('tbody')) break;
+
+        if (attempt < MAX_RETRIES) {
+          console.warn(`⚠️ HTML semble incomplet, nouvelle tentative…`);
+          await new Promise(r => setTimeout(r, 2000 * attempt)); // backoff exponentiel
+        }
+
+      } catch (err) {
+        console.error(`❌ Tentative ${attempt} échouée :`, err.message);
+        if (attempt === MAX_RETRIES) throw err;
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
+
   } finally {
     await browser.close();
   }
 
+  // ── Parsing inchangé (tu avais un bug : `discipline` déclaré deux fois) ────
   const $ = cheerio.load(html);
 
   const title = $('title').text();
   const hippoMatch = title.match(/Qualification\s+([^\d]+?)\s+\d{2}\/\d{2}\/\d{4}/i);
   const hippodrome = hippoMatch ? hippoMatch[1].trim().toUpperCase() : '';
 
-  let discipline = ' ';
+  let disciplineGlobal = 'Attelé';
   const bodyText = $('body').text();
-  if (bodyText.includes('Monté'))       discipline = 'Monté';
-  else if (bodyText.includes('Attelé')) discipline = 'Attelé';
+  if (bodyText.includes('Monté'))       disciplineGlobal = 'Monté';
+  else if (bodyText.includes('Attelé')) disciplineGlobal = 'Attelé';
 
   const distMatch = bodyText.match(/(\d{3,4})\s*m/);
   const distance = distMatch ? distMatch[1] : '';
@@ -469,10 +509,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
   $('tbody tr').each((_, row) => {
     const $row = $(row);
 
-    // Lot — cel-0
     const lot = $row.find('.cel-0').first().text().trim();
 
-    // Lien cheval — cel-2
     const $link = $row.find('.cel-2 a[href*="/stats/chevaux/"]').first();
     if (!$link.length) return;
 
@@ -487,27 +525,23 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
     if (engages.find(p => p.horse_id === horse_id)) return;
 
-    // SA (sexe + âge) — cel-3
-    const sa = $row.find('.cel-3').text().trim(); // ex: "F4", "H3", "M2"
-
-    // Discipline — cel-7
-    const disciplineRaw = $row.find('.cel-7').text().trim(); // "Attelé", "Monté", ou vide
-    const discipline = disciplineRaw || 'Attelé';
+    const sa = $row.find('.cel-3').text().trim();
+    const disciplineRow = $row.find('.cel-7').text().trim() || disciplineGlobal; // ← fix bug
 
     engages.push({
-        nom,
-        slug,
-        horse_id,
-        lot,
-        sexe_age: sa,
-        discipline,
-        cheval_url: `/stats/chevaux/${slug}/${horse_id}/courses`,
+      nom,
+      slug,
+      horse_id,
+      lot,
+      sexe_age: sa,
+      discipline: disciplineRow,
+      cheval_url: `/stats/chevaux/${slug}/${horse_id}/courses`,
     });
   });
 
   console.log(`✅ ${engages.length} engagés trouvés`);
 
-  return { prix: 'QUALIFICATION', hippodrome, discipline, date, distance, engages };
+  return { prix: 'QUALIFICATION', hippodrome, discipline: disciplineGlobal, date, distance, engages };
 }
 
 /**
@@ -517,8 +551,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 async function getHorsePerf(urlPerfs) {
     const browser = await puppeteer.launch({
         headless: true,
-        //executablePath: '/usr/bin/google-chrome',
-        executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: '/usr/bin/google-chrome',
+        //executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         args: [
             '--no-sandbox',
             '--disable-dev-shm-usage',
