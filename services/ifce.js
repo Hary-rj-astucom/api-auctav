@@ -43,12 +43,15 @@ async function getInfoHorseIFCE(sire_number){
         const date_naissance = response.data.birthDate;
         const annee_naissance = date_naissance.split("-")[0];
 
+        const color_horse = response.data.colorCode;
+        const robe = color_horse.charAt(0).toUpperCase() + color_horse.slice(1).toLowerCase();
+
         const result = {
             nom: response.data.birthName,
             pays: response.data.birthCountryCode,
             race: response.data.breedCode,
             sexe: response.data.sexCode,
-            robe: response.data.colorCode,
+            robe:  robe,
             annee: annee_naissance,
             dateNaissance: date_naissance,
             pere: response.data.father.birthName,
