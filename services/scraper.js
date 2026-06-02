@@ -703,31 +703,40 @@ async function getHorsePerfLeTrot(urlPerfs){
 
       // Date + link (cel-0)
       const $dateCell = $row.find('.cel-0');
-      const date = $dateCell.find('a').first().text().trim().replace(/(\d{2})\/(\d{2})\/(\d{2})/, '20$3-$2-$1');;
-      
-      const link = $dateCell.find('a').first().attr('href');
+      const date = $dateCell.find('a').first().text().trim().replace(/(\d{2})\/(\d{2})\/(\d{2})/, '20$3-$2-$1');
 
-      // Rang (cel-1)
-      const place = $row.find('.cel-1 .cel-main').text().trim();
+      if(date != ""){
 
-      // Hippodrome + Prix (cel-7)
-      const $hippoCell = $row.find('.cel-7');
-      const hippodrome = $hippoCell.find('a').first().text().trim();
-      const prixVal = $hippoCell.find('a').last().text().trim();
+        const link = $dateCell.find('a').first().attr('href');
 
-      performances.push({
-        date,
-        place,
-        prix: `${prixVal} (${hippodrome})`,
-        link: link ? `https://www.letrot.com${link}` : null
-      });
+        // Hippodrome + Prix (cel-7)
+        const $hippoCell = $row.find('.cel-7');
+        const hippodrome = $hippoCell.find('a').first().text().trim();
+        const prixVal = $hippoCell.find('a').last().text().trim();
 
-      console.log({
+        let place = '-';
+        // Rang (cel-1)
+        if(prixVal.includes('QUALIFICATION')){
+          place = $row.find('.cel-1 .cel-main').text().trim();
+        }else{
+          place = $row.find('.cel-1 span.border-b-2').text().trim();
+        }
+
+        performances.push({
           date,
           place,
           prix: `${prixVal} (${hippodrome})`,
-          link
-      });
+          link: link ? `https://www.letrot.com${link}` : null
+        });
+
+        console.log({
+            date,
+            place,
+            prix: `${prixVal} (${hippodrome})`,
+            link
+        });
+
+      }
 
     });
 
