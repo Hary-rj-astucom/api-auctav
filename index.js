@@ -1,5 +1,5 @@
 const express = require('express');
-const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll, getHorsePerf } = require('./services/scraper');
+const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll, getHorsePerf, getHorsePerfLeTrot } = require('./services/scraper');
 const { getCacheWithTTL, setCache, secondsUntilMidnight } = require('./services/cache');
 const { getInfoHorseIFCE } = require('./services/ifce');
 require('dotenv').config();
@@ -134,8 +134,17 @@ app.get('/api/programme', async (req, res) => {
 app.get('/api/horseperf', async (req, res) => {
   try {
     console.log(req.query.url);
-    const data = await getHorsePerf(req.query.url);
-    res.json(data);
+
+    if(req.query.url.includes("equidia")){
+      const data = await getHorsePerf(req.query.url);
+      res.json(data);
+    }else if(req.query.url.includes("letrot")){
+      const data = await getHorsePerfLeTrot(req.query.url);
+      res.json(data);
+    }else{
+      res.json(null);
+    }
+
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: err.message });

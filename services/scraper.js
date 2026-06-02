@@ -661,9 +661,87 @@ async function getHorsePerf(urlPerfs) {
     }
 }
 
+/**
+ * get perf cheval LeTrot
+ * exemple of URL = https://www.letrot.com/stats/chevaux/nuit-du-pont/ZmF8ZQMHBQUZ/courses
+ */
+async function getHorsePerfLeTrot(urlPerfs){
+  const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: '/usr/bin/google-chrome',
+      //executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      args: [
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-gpu'
+      ]
+  });
+
+  try {
+
+    const page = await browser.newPage();
+
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36');
+    await page.setExtraHTTPHeaders({'Accept-Language': 'fr-FR,fr;q=0.9'});
+
+    await page.goto(urlPerfs, {
+      waitUntil: 'networkidle2',
+      timeout: 30000
+    });
+
+    // attendre que les courses soient rendues
+    await page.waitForSelector('#performances',{ timeout: 15000 });
+
+    const html = await page.content();
+
+    const $ = cheerio.load(html);
+    const performances = [];
+
+    $('#performances tbody tr').each((_, row) => {
+      const $row = $(row);
+
+      // Date + link (cel-0)
+      const $dateCell = $row.find('.cel-0');
+      const date = $dateCell.find('a').first().text().trim().replace(/(\d{2})\/(\d{2})\/(\d{2})/, '20$3-$2-$1');;
+      
+      const link = $dateCell.find('a').first().attr('href');
+
+      // Rang (cel-1)
+      const place = $row.find('.cel-1 .cel-main').text().trim();
+
+      // Hippodrome + Prix (cel-7)
+      const $hippoCell = $row.find('.cel-7');
+      const hippodrome = $hippoCell.find('a').first().text().trim();
+      const prixVal = $hippoCell.find('a').last().text().trim();
+
+      performances.push({
+        date,
+        place,
+        prix: `${prixVal} (${hippodrome})`,
+        link: link ? `https://www.letrot.com${link}` : null
+      });
+
+      console.log({
+          date,
+          place,
+          prix: `${prixVal} (${hippodrome})`,
+          link
+      });
+
+    });
+
+    return performances;
+
+  } finally {
+      await browser.close();
+  }
+
+}
+
 
 module.exports = {
   getDayProgram, getCoursePartants, getHorseDetails, resolveDate,
   getCourseEngages, getDayQualification,
-  withRetry, poolAll, getHorsePerf,
+  withRetry, poolAll, getHorsePerf,getHorsePerfLeTrot
 };
