@@ -245,8 +245,8 @@ async function getEngageForToday() {
 
     //set cache
     const dateOrSlugcache = 'aujourd-hui';
-    const date = resolveDate(dateOrSlugcache);
-    const cacheKey = `engages_${date}`;
+    const datecache = resolveDate(dateOrSlugcache);
+    const cacheKey = `engages_${datecache}`;
 
     // ── Cache unique pour les deux jours ──────────────────────────────────────
     const cached = getCacheWithTTL(cacheKey, 3600);
@@ -256,12 +256,15 @@ async function getEngageForToday() {
     // }
 
     try {
-        console.log(`[SCRAPE] engages ${date} + demain`);
+        console.log(`[SCRAPE] engages ${datecache} + demain`);
 
         const dayResults = await Promise.allSettled(
             dateOrSlugs.map(async (dateOrSlug) => {
                 const date = resolveDate(dateOrSlug);
                 const reunions = await getDayQualification(dateOrSlug);
+
+                console.log(dateOrSlug);
+                console.log(JSON.stringify(reunions));
 
                 // ── Step 1: qualification courses ─────────────────────────────
                 const qualifTasks = [];
@@ -337,7 +340,7 @@ async function getEngageForToday() {
         }
 
         setCache(cacheKey, merged, 3600);
-        console.log(`[CACHE SET] engages_${date} — ${Object.keys(merged).join(', ')}`);
+        console.log(`[CACHE SET] engages_${datecache} — ${Object.keys(merged).join(', ')}`);
         console.log('getEngageForTodayAndTomorrow: finished !!!');
         return merged;
 
