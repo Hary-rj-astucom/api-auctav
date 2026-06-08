@@ -717,7 +717,7 @@ async function getHorsePerfLeTrot(urlPerfs){
         let place = '-';
         // Rang (cel-1)
         if(prixVal.includes('QUALIFICATION')){
-          place = $row.find('.cel-2 .cel-main').text().trim();
+          place = $row.find('.cel-2 #is-justify-2.cel-main').text().trim();
         }else{
           place = $row.find('.cel-1 span.border-b-2').text().trim();
         }
