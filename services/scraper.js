@@ -108,8 +108,8 @@ async function getDayProgram(dateOrSlug = 'aujourd-hui') {
   // Puppeteer pour charger le JS
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--disable-gpu']
   });
 
@@ -268,7 +268,7 @@ async function getCoursePartants(date, reunion_id, num_course) {
 
   // Partants — liens /stats/chevaux/{slug}/{horse_id}/courses
   const partants = [];
-  $('a[href*="/stats/chevaux/"]').each((_, el) => {
+  $('#partants-arrives a[href*="/stats/chevaux/"]').each((_, el) => {
     const href = $(el).attr('href') || '';
     const nom  = $(el).text().trim().toUpperCase();
 
@@ -425,8 +425,8 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
