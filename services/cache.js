@@ -65,7 +65,7 @@ function setCache(key, data, ttlSeconds = 3600) {
 function secondsUntilMidnight() {
   const now = new Date();
   const midnight = new Date(now);
-  midnight.setHours(168, 0, 0, 0);
+  midnight.setHours(168, 0, 0, 0); // 7 jour
   return Math.floor((midnight - now) / 1000);
 }
 
