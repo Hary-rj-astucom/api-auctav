@@ -1,4 +1,4 @@
-const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll } = require('./scraper');
+const { getDayProgram, getCoursePartants, getHorseDetails, resolveDate, getDayQualification, getCourseEngages, withRetry, poolAll, getDayProgramEquidia, getCoursePartantsEquidia } = require('./scraper');
 const { getCacheWithTTL, setCache, secondsUntilMidnight } = require('./cache');
 
 // Concurrency caps (tune to taste)
@@ -6,7 +6,7 @@ const HORSE_CONCURRENCY   = 6;  // parallel getHorseDetails
 const COURSE_CONCURRENCY  = 4;  // parallel getCoursePartants / getCourseEngages
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared helper: fetch horse details with cache + retry
+// Shared helper: fetch horse details with cache + retry (LeTrot)
 // ─────────────────────────────────────────────────────────────────────────────
 async function fetchHorse(slug, horse_id) {
   const cacheKey = `horse_${horse_id}`;
@@ -18,7 +18,6 @@ async function fetchHorse(slug, horse_id) {
   console.log(`Horse: ${data.nom} ${data.naissance} ${data.sexe} ${data.discipline_qualif}`);
   return data;
 }
-
 
 /**
  * Get the partant of today
@@ -95,23 +94,23 @@ async function getPartantForToday(){
             const { partant, courseData, raceCode, hippoName, courseNum, details } = r.value;
 
             result.push({
-            nom:            partant.nom,
-            naissance:      details.naissance      || '',
-            sexe:           details.sexe           || '',
-            pere:           details.pere           || '',
-            mere:           details.mere           || '',
-            discipline:     courseData.discipline,
-            date,
-            course:         `${raceCode}C${courseNum}`,
-            prix:           courseData.prix,
-            hippodrome:     hippoName,
-            distance:       courseData.distance,
-            record:         details.record         || '',
-            gains:          details.gains          || '',
-            reduction:      details.reduction      || '',
-            reduction_date: details.reduction_date || '',
-            reduction_lieu: details.reduction_lieu || '',
-            urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
+                nom:            partant.nom,
+                naissance:      details.naissance      || '',
+                sexe:           details.sexe           || '',
+                pere:           details.pere           || '',
+                mere:           details.mere           || '',
+                discipline:     courseData.discipline,
+                date,
+                course:         `${raceCode}C${courseNum}`,
+                prix:           courseData.prix,
+                hippodrome:     hippoName,
+                distance:       courseData.distance,
+                record:         details.record         || '',
+                gains:          details.gains          || '',
+                reduction:      details.reduction      || '',
+                reduction_date: details.reduction_date || '',
+                reduction_lieu: details.reduction_lieu || '',
+                urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
             });
         }
 
@@ -123,7 +122,6 @@ async function getPartantForToday(){
         console.error(err);
     }
 }
-
 
 /**
  * Get the partantRP of today
@@ -234,7 +232,6 @@ async function getPartantRPForToday(){
         console.error(err);
     }
 }
-
 
 /**
  * Get the qualification of today
@@ -349,8 +346,39 @@ async function getEngageForToday() {
     }
 }
 
+// ----------------------------------------------------------------------------
+// Equidia 
+// ----------------------------------------------------------------------------
+
+/**
+ * Get the partant equidia of today
+*/
+async function getPartantEquidiaForToday(){
+    const dateOrSlug = 'aujourd-hui';
+    const date = resolveDate(dateOrSlug);
+
+    try{
+
+        const reunions = await getDayProgramEquidia(date);
+        console.log(`${reunions.length} reunions trouvees`);
+
+        // ── Step 1: data (capped) ──────────────────────
+        const data = [];
+        for (const reunion of reunions) {
+            for (const course of reunion.courses) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                data.push( await  getCoursePartantsEquidia(reunion.hippodrome, date, reunion.reunion_id, course.numText));
+            }
+        }
+
+
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 module.exports = {
-  getPartantForToday, getPartantRPForToday, getEngageForToday
+  getPartantForToday, getPartantRPForToday, getEngageForToday, getPartantEquidiaForToday
 };
 
 

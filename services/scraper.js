@@ -1,6 +1,10 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+
 const puppeteer = require('puppeteer');
+// const puppeteer = require('puppeteer-extra');
+// const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+// puppeteer.use(StealthPlugin());
 
 const BASE_URL = 'https://www.letrot.com';
 
@@ -94,6 +98,10 @@ function resolveDate(dateOrSlug) {
   }
   return dateOrSlug; // assume YYYY-MM-DD
 }
+
+// --------------------------------------------------- //
+//         Site LeTrot.com (categorie trot)            //
+// --------------------------------------------------- //
 
 /**
  * Scrape the day's program: list of reunions with their courses
@@ -748,9 +756,210 @@ async function getHorsePerfLeTrot(urlPerfs){
 
 }
 
+// --------------------------------------------------- //
+//         Site Equidia (categorie galop)              //
+// --------------------------------------------------- //
+
+/**
+ * Scrape the day's program: list of reunions with their courses Galop (date with YYYY-MM-DD format)
+ * Returns: [{ reunion_id, hippodrome, date, heure, courses: [{num, heure, url}] }]
+*/
+async function getDayProgramEquidia(date){
+  const browser = await puppeteer.launch({
+    headless: true,
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    args: [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-gpu'
+    ]
+  });
+
+  const page = await browser.newPage();
+
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
+  });
+
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
+
+  await page.goto(`https://www.equidia.fr/courses-hippique/galop?date=${date}`, { waitUntil: 'networkidle2', timeout: 30000 });
+
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  await page.waitForSelector('[class="row clickable table-row row-reunion fill-primary-blue"]', { timeout: 15000 })
+    .catch(() => console.warn('⚠️ Blocs non trouvés'));
+
+  await page.waitForSelector('[class="course-container"]', { timeout: 15000 })
+    .catch(() => console.warn('⚠️ course non trouvés'));
+
+  const html = await page.content();
+  await browser.close();
+
+  const $ = cheerio.load(html);
+  const reunions = [];
+  const seenQualifs = new Set();
+
+  console.log('Nb blocks meeting-view-item:', $('[class="row clickable table-row row-reunion fill-primary-blue"]').not('[hidden]').length);
+
+  // ── Courses normales ──────────────────────────────────────────────────────
+  $('[class="row clickable table-row row-reunion fill-primary-blue"]').not('[hidden]').each((_, block) => {
+    const $block = $(block);
+
+    // ── reunion_id : extraire "R1" depuis l'attribut xlink:href="#logo-R1" ──
+    // Chercher dans tous les <use> du bloc
+    let reunion_id = null;
+    $block.find('use').each((_, use) => {
+      const h = $(use).attr('href') || $(use).attr('xlink:href') || '';
+      const m = h.match(/#logo-ER(\d+)/);
+      if (m) {
+        reunion_id = `R${m[1]}`;
+        return false; // break
+      }
+    });
+
+    // Fallback : index + 1
+    if (!reunion_id) reunion_id = `R${i + 1}`;
+
+    // ── hippodrome ────────────────────────────────────────────────────────────
+    const hippodrome = $block.find('.reunion-lieu').text().trim();
+
+    // ── heure de la réunion (heure de début diffusion) ────────────────────────
+    const heure = $block.find('.hour-reunion').text().trim();
+
+    // ── courses ───────────────────────────────────────────────────────────────
+    const courses = [];
+    $block.find('.course-container').each((_, container) => {
+      const $container = $(container);
+
+      // Numéro : texte du <a class="num-course">, ex: " C1 " → 1
+      const numText = $container.find('a.num-course').contents().filter(function() {
+        return this.nodeType === 3; // nœud texte uniquement (ignore les <img>)
+      }).text().trim(); // "C1"
+
+      // Heure de la course
+      const heureCourse = $container.find('.font-size-caption.text-primary-blue').text().trim();
+
+      // URL construite (les <a> n'ont pas de href dans le HTML rendu)
+      const url = numText && reunion_id
+        ? `https://www.equidia.fr/courses/${date}/${reunion_id}/${numText}`
+        : null;
+
+      if (numText) {
+        courses.push({ numText, heure: heureCourse, url });
+      }
+    });
+
+    reunions.push({ reunion_id, hippodrome, date, heure, courses });
+  });
+
+  return reunions;
+}
+
+/**
+ * Scrape one course page: partants with basic info (Equidia)
+ * Returns: [{ nom, naissance, sexe, pere, mere, discipline, date, course, prix, hippodrome, distance, record, gains, reduction, reduction_date, reduction_lieu, urlPerfs }]
+ */
+async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_id, num_course) {
+  const url = `https://www.equidia.fr/courses/${date_course}/${reunion_id}/${num_course}`;
+
+  const browser = await puppeteer.launch({
+    headless: false,
+    //executablePath: '/usr/bin/google-chrome',
+    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
+  });
+
+  const result =  [];
+  try {
+    const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    // Attendre que le bouton cookie
+    let cookie = await page.waitForSelector('button[aria-label="Consent"]', { timeout: 20000 })
+      .catch(() => console.warn('Aucun cookie trouvé'));
+    if(cookie){
+      cookie.click();
+    }
+
+    // Attendre que le tableau des partants soit chargé
+    await page.waitForSelector('.table-row.clickable', { timeout: 15000 })
+      .catch(() => console.warn('⚠️ Aucun partant trouvé'));
+
+    const html = await page.content();
+    const $ = cheerio.load(html);
+
+    // Avoir les informations qui ne changent pas 
+    const discipline = $('[class="condition-summary--main--info"]').text().trim();
+    const date = date_course; 
+    const course = `${reunion_id}${num_course}`; 
+    const prix =  $('h1').text().trim();;
+    const hippodrome = hippodrome_course; 
+    const distance = $('[class="condition-summary--piste--details"] ul li').text().trim();;
+
+    console.log("recuperation de course");
+    console.log(discipline, date, course, prix, hippodrome, distance);
+
+    // clicker un par un sur les liens
+    const row_elements = await page.$$(".table-row.clickable");
+    for (const row_element of row_elements) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      // ouvrir le modal
+      await row_element.click();
+
+      // traitement
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      let partants = {
+        nom: await page.$$(".nom-cheval").text(), 
+        naissance: "", 
+        sexe: "", 
+        pere, 
+        mere, 
+        discipline: discipline, 
+        date: date, 
+        course: course, 
+        prix: prix, 
+        hippodrome: hippodrome, 
+        distance: distance, 
+        record, 
+        gains, 
+        reduction, 
+        reduction_date, 
+        reduction_lieu, 
+        urlPerfs
+      };
+
+      // fermer le modal
+      const close_button = await page.$('button[aria-label="Close"]');
+      if (close_button) {
+        await close_button.click();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        console.warn('⚠️ Bouton close non trouvé');
+      }
+
+    }
+
+  } finally {
+    await browser.close();
+  }
+
+
+}
+
 
 module.exports = {
   getDayProgram, getCoursePartants, getHorseDetails, resolveDate,
   getCourseEngages, getDayQualification,
-  withRetry, poolAll, getHorsePerf,getHorsePerfLeTrot
+  withRetry, poolAll, getHorsePerf,getHorsePerfLeTrot, 
+  getDayProgramEquidia, getCoursePartantsEquidia
 };
