@@ -8,6 +8,9 @@ const puppeteer = require('puppeteer');
 
 const BASE_URL = 'https://www.letrot.com';
 
+const chrome_path = '/usr/bin/google-chrome';
+//const chrome_path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+
 const httpClient = axios.create({
   baseURL: BASE_URL,
   timeout: 15000,
@@ -116,8 +119,7 @@ async function getDayProgram(dateOrSlug = 'aujourd-hui') {
   // Puppeteer pour charger le JS
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled', '--disable-gpu']
   });
 
@@ -218,8 +220,7 @@ async function getCoursePartants(date, reunion_id, num_course) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
@@ -360,8 +361,7 @@ async function getDayQualification(dateOrSlug = 'aujourd-hui') {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -433,8 +433,7 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/usr/bin/google-chrome',
-    //executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -559,8 +558,7 @@ async function getCourseEngages(date, reunion_id, valif_id) {
 async function getHorsePerf(urlPerfs) {
     const browser = await puppeteer.launch({
         headless: true,
-        executablePath: '/usr/bin/google-chrome',
-        //executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        executablePath: chrome_path,
         args: [
             '--no-sandbox',
             '--disable-dev-shm-usage',
@@ -676,8 +674,7 @@ async function getHorsePerf(urlPerfs) {
 async function getHorsePerfLeTrot(urlPerfs){
   const browser = await puppeteer.launch({
       headless: true,
-      executablePath: '/usr/bin/google-chrome',
-      //executablePath:'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      executablePath: chrome_path,
       args: [
         '--no-sandbox',
         '--disable-dev-shm-usage',
@@ -767,8 +764,7 @@ async function getHorsePerfLeTrot(urlPerfs){
 async function getDayProgramEquidia(date){
   const browser = await puppeteer.launch({
     headless: true,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: [
       '--no-sandbox',
       '--disable-dev-shm-usage',
@@ -869,8 +865,7 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
 
   const browser = await puppeteer.launch({
     headless: false,
-    //executablePath: '/usr/bin/google-chrome',
-    executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    executablePath: chrome_path,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
