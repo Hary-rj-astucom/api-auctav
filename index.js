@@ -7,10 +7,6 @@ const otpRoutes = require('./routes/otproute');
 const app = express();
 const PORT = process.env.PORT || 3003;
 
-// Concurrency caps (tune to taste)
-const HORSE_CONCURRENCY   = 6;  // parallel getHorseDetails
-const COURSE_CONCURRENCY  = 4;  // parallel getCoursePartants / getCourseEngages
-
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "https://www.auctav.com");
   res.header("Access-Control-Allow-Methods", "GET, OPTIONS");

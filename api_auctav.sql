@@ -40,7 +40,6 @@ CREATE TABLE engage (
     date DATE NOT NULL,
     nom VARCHAR(50) NOT NULL,
     naissance VARCHAR(25) NOT NULL,
-    date DATE NOT NULL,
     hippodrome VARCHAR(100) NOT NULL,
     lot VARCHAR(10) NOT NULL,
     reduction VARCHAR(10) default NULL,
@@ -51,3 +50,10 @@ CREATE TABLE engage (
 ALTER TABLE engage
 ADD CONSTRAINT uq_partant
 UNIQUE (date, urlPerfs);
+
+
+-- ----------------------------------------------------------------------------------------------------------------- --
+
+SELECT DISTINCT(contact_id), nom, prenom, email, tel FROM `contact_infos` 
+JOIN contact ON contact_infos.contact_id = contact.id
+WHERE contact_type = 'infos_suppl' AND infos_cle like '%TRO%' OR infos_cle like '%tro%' AND infos_value LIKE "oui";

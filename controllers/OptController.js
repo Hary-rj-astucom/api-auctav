@@ -76,6 +76,8 @@ const verificationOtp = async (req, res) => {
             { where: { id: otpObject.id } }
         );
 
+        console.log('Now : ' + now + '  Expired' + expiredAt);
+
         if (now <= expiredAt) {
             return res.status(200).json({
                 access: true,
