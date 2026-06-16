@@ -7,7 +7,7 @@ const generateOtp = async (req, res) => {
     try {
 
         const email = req.body.email;
-        const ip_adress = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
+        const ip_adress = req.body.ip;
         const source = req.headers['user-agent'];
 
         let otp = "";
