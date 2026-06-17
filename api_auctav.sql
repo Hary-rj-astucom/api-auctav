@@ -2,7 +2,7 @@ CREATE TABLE otp (
     id INT auto_increment PRIMARY KEY,
     email VARCHAR(50) NOT NULL,
     ip_adress VARCHAR(25) NOT NULL,
-    source VARCHAR(25) NOT NULL,
+    source VARCHAR(255) NOT NULL,
     otp VARCHAR(20) NOT NULL,
     date_created TIMESTAMP default current_timestamp,
     expire_time INT default 180, -- 3 minutes
