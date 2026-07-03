@@ -1,0 +1,63 @@
+version: "3.9"
+
+networks:
+  traefik-public:
+    external: true
+  api-auctav-net:
+    external: true
+
+services:
+  api-auctav-mysql:
+    image: mysql:8
+    container_name: api-auctav-mysql
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Paris
+      - MYSQL_ROOT_PASSWORD=${DATABASE_ROOT_PWD}
+      - MYSQL_DATABASE=${DATABASE_NAME}
+      - MYSQL_USER=${DATABASE_USER}
+      - MYSQL_PASSWORD=${DATABASE_PWD}
+    volumes:
+      - api-auctav-mysql-data:/var/lib/mysql
+    networks:
+      - api-auctav-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${DATABASE_ROOT_PWD}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-auctav:
+    build: .
+    container_name: api-auctav
+    restart: unless-stopped
+    depends_on:
+      api-auctav-mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - HOST=api-auctav-mysql
+    networks:
+      - api-auctav-net
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.api-auctav.rule=Host(`api-auctav.astucom.com`)
+      - traefik.http.routers.api-auctav.entrypoints=websecure
+      - traefik.http.routers.api-auctav.tls.certresolver=letsencrypt
+      - traefik.http.services.api-auctav.loadbalancer.server.port=3000
+
+volumes:
+  api-auctav-mysql-data:
