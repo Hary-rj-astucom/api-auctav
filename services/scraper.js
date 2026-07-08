@@ -8,8 +8,8 @@ const puppeteer = require('puppeteer');
 
 const BASE_URL = 'https://www.letrot.com';
 
-const chrome_path = '/usr/bin/google-chrome';
-//const chrome_path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+//const chrome_path = '/usr/bin/google-chrome';
+const chrome_path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
 const httpClient = axios.create({
   baseURL: BASE_URL,
