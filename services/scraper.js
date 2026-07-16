@@ -635,7 +635,7 @@ async function getHorsePerf(urlPerfs) {
           // -------------------------
           const prevRow = $(row).prev('tr.customable-table--row');
           const placeText = prevRow.find('.classm').text().replace(/\s+/g, ' ').trim();
-          const place = parseInt(placeText, 10) || null;
+          const place = parseInt(placeText, 10) || placeText;
 
           // -------------------------
           //  Hippodromme
