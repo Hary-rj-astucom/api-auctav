@@ -8,14 +8,14 @@ const COURSE_CONCURRENCY  = 4;  // parallel getCoursePartants / getCourseEngages
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helper: fetch horse details with cache + retry (LeTrot)
 // ─────────────────────────────────────────────────────────────────────────────
-async function fetchHorse(slug, horse_id) {
+async function fetchHorse(slug, horse_id, reunion_id = null, courseNum = null) {
   const cacheKey = `horse_${horse_id}`;
   const cached = getCacheWithTTL(cacheKey, 86400);
   if (cached) return cached;
 
   const data = await withRetry(() => getHorseDetails(slug, horse_id));
   //setCache(cacheKey, data, 86400);
-  console.log(`Horse: ${data.nom} ${data.naissance} ${data.sexe} ${data.discipline_qualif}`);
+  console.log(`Horse: ${data.nom} ${data.naissance} ${data.sexe} ${data.discipline_qualif} | ${reunion_id}/${courseNum}`);
   return data;
 }
 
@@ -70,18 +70,20 @@ async function getPartantForToday(){
             const hippoName = hippodrome.split('\n')[1]?.trim() || hippodrome.trim();
 
             for (const partant of courseData.partants) {
-            partantJobs.push({ partant, courseData, raceCode, hippoName, courseNum: course.num });
+            partantJobs.push({ partant, courseData, raceCode, hippoName, courseNum: course.num, reunion_id: reunion.reunion_id });
             }
         }
 
         // ── Step 3: fetch all horse details in parallel (capped) ─────────────────
         const horseResults = await poolAll(
             partantJobs.map(job => () =>
-            fetchHorse(job.partant.slug, job.partant.horse_id)
-                .then(details => ({ ...job, details }))
+            fetchHorse(job.partant.slug, job.partant.horse_id, job.reunion_id, job.courseNum)
+                .then(details => 
+                    ({ ...job, details })
+                )
                 .catch(err => {
-                console.warn(`  ✗ Cheval ${job.partant.nom}: ${err.message}`);
-                return { ...job, details: {} };
+                    console.warn(`  ✗ Cheval ${job.partant.nom}: ${err.message}`);
+                    return { ...job, details: {} };
                 })
             ),
             HORSE_CONCURRENCY
@@ -91,8 +93,8 @@ async function getPartantForToday(){
         const result = [];
         for (const r of horseResults) {
             if (r.status === 'rejected') continue;
-            const { partant, courseData, raceCode, hippoName, courseNum, details } = r.value;
-
+            const { partant, courseData, raceCode, hippoName, courseNum, details, reunion_id } = r.value;
+            
             result.push({
                 nom:            partant.nom,
                 naissance:      details.naissance      || '',

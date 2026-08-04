@@ -246,16 +246,20 @@ async function getCoursePartants(date, reunion_id, num_course) {
   const $ = cheerio.load(html);
 
   // Reunion code + Hippodrome — depuis <div translate="no">R2\n        CAEN</div>
-  let hippodrome   = '';
+  let hippodrome = '';
   let reunion_code = '';
-  $('[translate="no"]').each((_, el) => {
-    const t = $(el).text().trim().replace(/\s+/g, ' '); // "R2 CAEN"
-    const match = t.match(/^(R\d+)\s+(.+)$/);
-    if (match) {
-      reunion_code = match[1]; // "R2"
-      hippodrome   = match[2]; // "CAEN"
-      return false;
-    }
+
+  $('div[translate="no"].md\\:hidden.font-semibold.text-grey').each((_, el) => {
+      const text = $(el).text().replace(/\s+/g, ' ').trim();
+      const match = text.match(/^(R\d+)\s+(.+)$/i);
+      if (match) {
+        reunion_code = match[1];
+        hippodrome = match[2].trim();
+      }
+      else{
+        reunion_code = reunion_id;
+        hippodrome = text; 
+      }
   });
 
   // Discipline — depuis la classe CSS icon-monte ou icon-attele
@@ -297,7 +301,7 @@ async function getCoursePartants(date, reunion_id, num_course) {
     });
   });
 
-  console.log(`✅ ${partants.length} partants trouvés — ${prix} (${hippodrome})`);
+  console.log(`✅ ${partants.length} partants trouvés — ${prix} (${hippodrome}) | ${url}`);
 
   return { prix, reunion_code, hippodrome, discipline, date, distance, dotation, nb_partants, partants };
 }
