@@ -321,6 +321,9 @@ async function getEngageForToday() {
                         lot:            partant.lot            || '',
                         reduction:      details.reduction      || '',
                         reduction_date: details.reduction_date || '',
+                        sexe:           details.sexe           || '',
+                        pere:           details.pere           || '',
+                        mere:           details.mere           || '',
                         discipline:     partant.discipline     || '',
                         urlPerfs:       `https://www.letrot.com${partant.cheval_url}`,
                     });
