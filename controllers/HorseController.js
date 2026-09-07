@@ -24,12 +24,16 @@ const getPartant = async (req, res) => {
   const dateOrSlug = req.query.date || 'aujourd-hui';
   const date = resolveDate(dateOrSlug);
   const cacheKey = `partants_${date}`;
+  const cacheKeyEquidia = `partants_equidia_${date}`;
   const TTL = secondsUntilMidnight();
 
   const cached = getCacheWithTTL(cacheKey, TTL);
-  if (cached) {
+  const cachedEquidia = getCacheWithTTL(cacheKeyEquidia, TTL);
+
+  const cacheResult = [ ...cached, ...cachedEquidia[0]];
+  if (cacheResult) {
     console.log(`[CACHE] partants ${date}`);
-    return res.json(cached);
+    return res.json(cacheResult);
   }else{
     console.log(`[SCRAPE] partants ${date} cache not exist yet`);
     return res.json({});

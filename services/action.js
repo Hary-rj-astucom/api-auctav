@@ -361,6 +361,8 @@ async function getEngageForToday() {
 async function getPartantEquidiaForToday(){
     const dateOrSlug = 'aujourd-hui';
     const date = resolveDate(dateOrSlug);
+    const cacheKey = `partants_equidia_${date}`;
+    const TTL = secondsUntilMidnight();
 
     try{
 
@@ -376,6 +378,9 @@ async function getPartantEquidiaForToday(){
             }
         }
 
+        setCache(cacheKey, data, TTL);
+
+        console.log('Get partantRP for today: finished !!!');
 
     } catch (err) {
         console.error(err);

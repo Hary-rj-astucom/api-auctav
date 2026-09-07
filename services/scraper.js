@@ -860,6 +860,37 @@ async function getDayProgramEquidia(date){
   return reunions;
 }
 
+async function clickByIndex(page, selector, index) {
+  await page.evaluate((sel, idx) => {
+    const els = document.querySelectorAll(sel);
+    if (els[idx]) els[idx].click();
+  }, selector, index);
+}
+
+async function closeModalIfOpen(page) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const isOpen = await page.$('.modal-body') !== null;
+    if (!isOpen) return true;
+
+    // Clic natif sur le bouton close (évite les soucis de hit-testing)
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[aria-label="Close"]');
+      if (btn) btn.click();
+    });
+
+    const closed = await page.waitForSelector('.modal-body', { hidden: true, timeout: 3000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (closed) return true;
+
+    // Fallback : touche Escape
+    await page.keyboard.press('Escape');
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return (await page.$('.modal-body')) === null;
+}
+
 /**
  * Scrape one course page: partants with basic info (Equidia)
  * Returns: [{ nom, naissance, sexe, pere, mere, discipline, date, course, prix, hippodrome, distance, record, gains, reduction, reduction_date, reduction_lieu, urlPerfs }]
@@ -873,7 +904,19 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
 
-  const result =  [];
+  const result = [];
+
+  function extractLabelValuePairs($, container) {
+    const data = {};
+    $(container).find('.info-cheval').each((i, el) => {
+      const label = $(el).text().replace(':', '').trim();
+      const parentText = $(el).parent().text().trim();
+      const value = parentText.replace($(el).text(), '').trim();
+      data[label] = value;
+    });
+    return data;
+  }
+
   try {
     const page = await browser.newPage();
     await page.evaluateOnNewDocument(() => {
@@ -883,78 +926,115 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
 
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    // Attendre que le bouton cookie
-    let cookie = await page.waitForSelector('button[aria-label="Consent"]', { timeout: 20000 })
+    const cookie = await page.waitForSelector('button[aria-label="Consent"]', { timeout: 20000 })
       .catch(() => console.warn('Aucun cookie trouvé'));
-    if(cookie){
-      cookie.click();
-    }
+    if (cookie) await cookie.click();
 
-    // Attendre que le tableau des partants soit chargé
     await page.waitForSelector('.table-row.clickable', { timeout: 15000 })
       .catch(() => console.warn('⚠️ Aucun partant trouvé'));
 
-    const html = await page.content();
-    const $ = cheerio.load(html);
+    const htmlCourse = await page.content();
+    const $course = cheerio.load(htmlCourse);
 
-    // Avoir les informations qui ne changent pas 
-    const discipline = $('[class="condition-summary--main--info"]').text().trim();
-    const date = date_course; 
-    const course = `${reunion_id}${num_course}`; 
-    const prix =  $('h1').text().trim();;
-    const hippodrome = hippodrome_course; 
-    const distance = $('[class="condition-summary--piste--details"] ul li').text().trim();;
+    const discipline = $course('.condition-summary--main--info').text().trim();
+    const prix = $course('h1').text().trim();
+    const distance = $course('.condition-summary--piste--details ul li').text().trim();
+    const course = `${reunion_id}${num_course}`;
 
-    console.log("recuperation de course");
-    console.log(discipline, date, course, prix, hippodrome, distance);
+    const nbPartants = (await page.$$('.table-row.clickable')).length;
+    console.log(`Course chargée : ${prix} - ${nbPartants} partants`);
 
-    // clicker un par un sur les liens
-    const row_elements = await page.$$(".table-row.clickable");
-    for (const row_element of row_elements) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      // ouvrir le modal
-      await row_element.click();
+    for (let i = 0; i < nbPartants; i++) {
+      try {
+        // Sécurité : s'assurer qu'aucun modal résiduel n'est ouvert avant de cliquer
+        await closeModalIfOpen(page);
 
-      // traitement
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      let partants = {
-        nom: await page.$$(".nom-cheval").text(), 
-        naissance: "", 
-        sexe: "", 
-        pere, 
-        mere, 
-        discipline: discipline, 
-        date: date, 
-        course: course, 
-        prix: prix, 
-        hippodrome: hippodrome, 
-        distance: distance, 
-        record, 
-        gains, 
-        reduction, 
-        reduction_date, 
-        reduction_lieu, 
-        urlPerfs
-      };
+        await clickByIndex(page, '.table-row.clickable', i);
 
-      // fermer le modal
-      const close_button = await page.$('button[aria-label="Close"]');
-      if (close_button) {
-        await close_button.click();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } else {
-        console.warn('⚠️ Bouton close non trouvé');
+        await page.waitForSelector('.modal-body .nom-cheval', { timeout: 10000 });
+        // petite pause pour laisser l'animation/le rendu se stabiliser
+        await new Promise(r => setTimeout(r, 500));
+
+        const htmlModal = await page.content();
+        const $ = cheerio.load(htmlModal);
+        const modal = $('.modal-body');
+
+        const nom = modal.find('.nom-cheval').clone().find('app-favorite-star').remove().end().text().trim();
+        const musique = modal.find('.musique-cheval').text().trim();
+
+        const jockeyEntraineurProprio = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').first());
+        const perePere = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').eq(1));
+
+        const noteEquidia = modal.find('app-final-note .final-note').first().text().trim();
+        const cotePmu = modal.find('.block-cote-graph .info').first().text().replace(/\s+/g, ' ').trim();
+
+        const hrefFiche = modal.find('a.button-complete-display').attr('href');
+        const urlFiche = hrefFiche ? `https://www.equidia.fr${hrefFiche}` : null;
+
+        let infosComplementaires = {};
+        if (urlFiche) {
+          const detailPage = await browser.newPage();
+          try {
+            await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+            await detailPage.goto(urlFiche, { waitUntil: 'networkidle2', timeout: 30000 });
+            await detailPage.waitForSelector('.block-informations', { timeout: 10000 }).catch(() => {});
+            const htmlDetail = await detailPage.content();
+            const $d = cheerio.load(htmlDetail);
+            infosComplementaires = extractLabelValuePairs($d, $d('.block-informations'));
+          } catch (e) {
+            console.warn(`⚠️ Erreur fiche complète pour ${nom}:`, e.message);
+          } finally {
+            await detailPage.close();
+          }
+        }
+
+        result.push({
+          nom,
+          naissance: infosComplementaires['Age'] || null,
+          sexe: infosComplementaires['Sexe'] || null,
+          pere: perePere['Père'] || infosComplementaires['Père'] || null,
+          mere: perePere['Mère'] || infosComplementaires['Mère'] || null,
+          discipline,
+          date: date_course,
+          course,
+          prix,
+          hippodrome: hippodrome_course,
+          distance,
+          record: musique,
+          gains: "",
+          reduction: noteEquidia,
+          reduction_date: "",
+          reduction_lieu: "",
+          urlPerfs: urlFiche,
+
+          cote_pmu: cotePmu,
+          jockey: jockeyEntraineurProprio['Jockey'] || null,
+          entraineur: jockeyEntraineurProprio['Entraineur'] || infosComplementaires['Entraineur'] || null,
+          proprietaire: jockeyEntraineurProprio['Propriétaire'] || infosComplementaires['Propriétaire'] || null,
+          pere_de_la_mere: infosComplementaires['Père de la mère'] || null,
+          eleveur: infosComplementaires['Éleveur'] || null,
+          race: infosComplementaires['Race'] || null,
+          robe: infosComplementaires['Robe'] || null
+        });
+
+        console.log(`✔ ${nom} récupéré`);
+
+        const closed = await closeModalIfOpen(page);
+        if (!closed) console.warn(`⚠️ Modal non fermé après ${nom}`);
+
+      } catch (err) {
+        console.warn(`⚠️ Échec sur le partant index ${i}:`, err.message);
+        await closeModalIfOpen(page); // on tente de nettoyer avant de continuer
+        continue;
       }
-
     }
 
   } finally {
     await browser.close();
   }
 
-
+  return result;
 }
-
 
 module.exports = {
   getDayProgram, getCoursePartants, getHorseDetails, resolveDate,
