@@ -377,7 +377,7 @@ async function getPartantEquidiaForToday(){
                 data.push( await  getCoursePartantsEquidia(reunion.hippodrome, date, reunion.reunion_id, course.numText));
             }
         }
-
+                
         setCache(cacheKey, data, TTL);
 
         console.log('Get partantRP for today: finished !!!');

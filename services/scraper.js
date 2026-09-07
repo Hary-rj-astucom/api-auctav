@@ -836,6 +836,11 @@ async function getDayProgramEquidia(date){
     $block.find('.course-container').each((_, container) => {
       const $container = $(container);
 
+      // Ignore les courses masquées (attribut hidden)
+      if ($container.is('[hidden]')) {
+        return; // équivalent de "continue" dans .each()
+      }
+
       // Numéro : texte du <a class="num-course">, ex: " C1 " → 1
       const numText = $container.find('a.num-course').contents().filter(function() {
         return this.nodeType === 3; // nœud texte uniquement (ignore les <img>)
@@ -848,6 +853,8 @@ async function getDayProgramEquidia(date){
       const url = numText && reunion_id
         ? `https://www.equidia.fr/courses/${date}/${reunion_id}/${numText}`
         : null;
+
+      console.log(url);
 
       if (numText) {
         courses.push({ numText, heure: heureCourse, url });
