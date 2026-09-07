@@ -30,7 +30,14 @@ const getPartant = async (req, res) => {
   const cached = getCacheWithTTL(cacheKey, TTL);
   const cachedEquidia = getCacheWithTTL(cacheKeyEquidia, TTL);
 
-  const cacheResult = [ ...cached, ...cachedEquidia[0]];
+  // Aplatit le tableau de tableaux en un seul tableau plat d'objets chevaux
+  const flatEquidia = cachedEquidia.flat();
+
+  // (optionnel) enlève les lignes "placeholder" vides (nom === "")
+  const cleanEquidia = flatEquidia.filter(h => h.nom && h.nom.trim() !== "");
+
+  const cacheResult = [...cached, ...cleanEquidia];
+
   if (cacheResult) {
     console.log(`[CACHE] partants ${date}`);
     return res.json(cacheResult);
