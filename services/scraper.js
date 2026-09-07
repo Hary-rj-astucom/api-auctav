@@ -899,7 +899,7 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
   const url = `https://www.equidia.fr/courses/${date_course}/${reunion_id}/${num_course}`;
 
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     executablePath: chrome_path,
     args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
   });
