@@ -30,13 +30,22 @@ const getPartant = async (req, res) => {
   const cached = getCacheWithTTL(cacheKey, TTL);
   const cachedEquidia = getCacheWithTTL(cacheKeyEquidia, TTL);
 
-  // Aplatit le tableau de tableaux en un seul tableau plat d'objets chevaux
-  const flatEquidia = cachedEquidia.flat();
+  const sexeMap = {
+    "Hongre": "H",
+    "Femelle": "F",
+    "Mâle": "M"
+  };
 
-  // (optionnel) enlève les lignes "placeholder" vides (nom === "")
-  const cleanEquidia = flatEquidia.filter(h => h.nom && h.nom.trim() !== "");
+  const flatEquidia = cachedEquidia
+    .flat()
+    .filter(h => h.nom && h.nom.trim() !== "")
+    .map(h => ({
+      ...h,
+      sexe: sexeMap[h.sexe] || h.sexe,
+      naissance: h.naissance ? (h.naissance.match(/\d{4}/) || [h.naissance])[0] : h.naissance
+    }));
 
-  const cacheResult = [...cached, ...cleanEquidia];
+  const cacheResult = [...cached, ...flatEquidia];
 
   if (cacheResult) {
     console.log(`[CACHE] partants ${date}`);
