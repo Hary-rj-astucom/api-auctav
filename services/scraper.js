@@ -311,7 +311,7 @@ async function getCoursePartants(date, reunion_id, num_course) {
  * Scrape a horse's detail page: naissance, père, mère, réduction, etc.
  * Returns: { nom, naissance, pere, mere, sexe, record, gains, reduction, reduction_date, reduction_lieu, discipline_qualif }
  */
-async function getHorseDetails(slug, horse_id) {
+async function getHorseDetails(slug, horse_id, _skipGrandParent = false) {
   const path = `/stats/chevaux/${slug}/${horse_id}/courses`;
   const $ = await fetchPage(path);
 
@@ -325,11 +325,19 @@ async function getHorseDetails(slug, horse_id) {
   const sexeMatch = pageText.match(/Sexe\s*\n?\s*([A-Z])/);
   const sexe = sexeMatch ? sexeMatch[1] : '';
 
-  const pere = $('a[href*="/stats/chevaux/"]').first().text().trim().toUpperCase();
+  // Père et Mère récupérés via leur label (.text-xs), plus fiable que l'ordre des liens
+  let pere = '', pere_href = '';
+  let mere = '', mere_href = '';
 
-  let mere = '';
-  $('a[href*="/stats/chevaux/"]').each((i, el) => {
-    if (i === 1) { mere = $(el).text().trim().toUpperCase(); return false; }
+  $('.text-xs').each((i, el) => {
+    const label = $(el).text().trim();
+    if (label === 'Père' || label === 'Mère') {
+      const link = $(el).parent().find('a').first();
+      const value = link.find('.text-normal').text().trim().toUpperCase();
+      const href = link.attr('href') || '';
+      if (label === 'Père') { pere = value; pere_href = href; }
+      if (label === 'Mère') { mere = value; mere_href = href; }
+    }
   });
 
   const gainsMatch = pageText.match(/Gains Totaux\s*\n?\s*([\d\s]+)/);
@@ -349,7 +357,27 @@ async function getHorseDetails(slug, horse_id) {
     reduction_lieu    = qualifMatch[4].trim();
   }
 
-  return { nom, naissance, sexe, pere, mere, gains, record, reduction, reduction_date, reduction_lieu, discipline_qualif };
+  // --- Récupération du père de la mère (grand-père maternel) ---
+  let pere_de_la_mere = '';
+  if (!_skipGrandParent && mere_href) {
+    const m = mere_href.match(/\/stats\/chevaux\/([^/]+)\/([^/]+)\/courses/);
+    if (m) {
+      const [, mereSlug, mereId] = m;
+      try {
+        const mereDetails = await getHorseDetails(mereSlug, mereId, true); // true = évite une récursion infinie
+        pere_de_la_mere = mereDetails.pere;
+      } catch (e) {
+        // page de la mère non trouvée ou erreur réseau : on laisse vide
+        pere_de_la_mere = '';
+      }
+    }
+  }
+
+  return {
+    nom, naissance, pere, mere, sexe, record, gains,
+    reduction, reduction_date, reduction_lieu, discipline_qualif,
+    peremere: pere_de_la_mere
+  };
 }
 
 
@@ -1018,7 +1046,7 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
           jockey: jockeyEntraineurProprio['Jockey'] || null,
           entraineur: jockeyEntraineurProprio['Entraineur'] || infosComplementaires['Entraineur'] || null,
           proprietaire: jockeyEntraineurProprio['Propriétaire'] || infosComplementaires['Propriétaire'] || null,
-          pere_de_la_mere: infosComplementaires['Père de la mère'] || null,
+          peremere: infosComplementaires['Père de la mère'] || null,
           eleveur: infosComplementaires['Éleveur'] || null,
           race: infosComplementaires['Race'] || null,
           robe: infosComplementaires['Robe'] || null

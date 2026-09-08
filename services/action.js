@@ -101,6 +101,7 @@ async function getPartantForToday(){
                 sexe:           details.sexe           || '',
                 pere:           details.pere           || '',
                 mere:           details.mere           || '',
+                peremere:       details.peremere       || '',
                 discipline:     courseData.discipline,
                 date,
                 course:         `${raceCode}C${courseNum}`,
@@ -377,7 +378,7 @@ async function getPartantEquidiaForToday(){
                 data.push( await  getCoursePartantsEquidia(reunion.hippodrome, date, reunion.reunion_id, course.numText));
             }
         }
-                
+
         setCache(cacheKey, data, TTL);
 
         console.log('Get partantRP for today: finished !!!');
