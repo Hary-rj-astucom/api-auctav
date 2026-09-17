@@ -804,42 +804,50 @@ async function getDayProgramEquidia(date){
       '--disable-gpu'
     ]
   });
-
+ 
   const page = await browser.newPage();
-
+ 
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     window.chrome = { runtime: {} };
   });
-
+ 
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
   await page.setExtraHTTPHeaders({ 'Accept-Language': 'fr-FR,fr;q=0.9' });
-
+ 
   await page.goto(`https://www.equidia.fr/courses-hippique/galop?date=${date}`, { waitUntil: 'networkidle2', timeout: 30000 });
-
+ 
   await new Promise(resolve => setTimeout(resolve, 3000));
-
-  await page.waitForSelector('[class="row clickable table-row row-reunion fill-primary-blue"]', { timeout: 15000 })
+ 
+  // Sélecteur par classes multiples (au lieu de [class="..."] exact) :
+  // matche toute réunion possédant ces 4 classes de base, qu'elle soit
+  // "normale" (fill-primary-blue) ou "live" (fill-primary-red text-primary-red live-row)
+  const REUNION_SELECTOR = '.row.clickable.table-row.row-reunion';
+ 
+  await page.waitForSelector(REUNION_SELECTOR, { timeout: 15000 })
     .catch(() => console.warn('⚠️ Blocs non trouvés'));
-
+ 
   await page.waitForSelector('[class="course-container"]', { timeout: 15000 })
     .catch(() => console.warn('⚠️ course non trouvés'));
-
+ 
   const html = await page.content();
   await browser.close();
-
+ 
   const $ = cheerio.load(html);
   const reunions = [];
-  const seenQualifs = new Set();
-
-  console.log('Nb blocks meeting-view-item:', $('[class="row clickable table-row row-reunion fill-primary-blue"]').not('[hidden]').length);
-
-  // ── Courses normales ──────────────────────────────────────────────────────
-  $('[class="row clickable table-row row-reunion fill-primary-blue"]').not('[hidden]').each((_, block) => {
+ 
+  const $blocksAll = $(REUNION_SELECTOR).not('[hidden]');
+  console.log('Nb blocks meeting-view-item (blue + red/live):', $blocksAll.length);
+ 
+  // ── Courses normales + live ─────────────────────────────────────────────
+  $blocksAll.each((i, block) => {
     const $block = $(block);
-
+ 
+    // Détection live : présence des classes fill-primary-red / live-row
+    const classList = ($block.attr('class') || '').split(/\s+/);
+    const isLive = classList.includes('live-row') || classList.includes('fill-primary-red');
+ 
     // ── reunion_id : extraire "R1" depuis l'attribut xlink:href="#logo-R1" ──
-    // Chercher dans tous les <use> du bloc
     let reunion_id = null;
     $block.find('use').each((_, use) => {
       const h = $(use).attr('href') || $(use).attr('xlink:href') || '';
@@ -849,49 +857,48 @@ async function getDayProgramEquidia(date){
         return false; // break
       }
     });
-
-    // Fallback : index + 1
+ 
+    // Fallback : index réel dans la liste (corrige le bug de `i` non défini)
     if (!reunion_id) reunion_id = `R${i + 1}`;
-
-    // ── hippodrome ────────────────────────────────────────────────────────────
+ 
+    // ── hippodrome ────────────────────────────────────────────────────────
     const hippodrome = $block.find('.reunion-lieu').text().trim();
-
-    // ── heure de la réunion (heure de début diffusion) ────────────────────────
+ 
+    // ── heure de la réunion (heure de début diffusion) ──────────────────────
     const heure = $block.find('.hour-reunion').text().trim();
-
-    // ── courses ───────────────────────────────────────────────────────────────
+ 
+    // ── courses ───────────────────────────────────────────────────────────
     const courses = [];
     $block.find('.course-container').each((_, container) => {
       const $container = $(container);
-
+ 
       // Ignore les courses masquées (attribut hidden)
       if ($container.is('[hidden]')) {
         return; // équivalent de "continue" dans .each()
       }
-
+ 
       // Numéro : texte du <a class="num-course">, ex: " C1 " → 1
       const numText = $container.find('a.num-course').contents().filter(function() {
         return this.nodeType === 3; // nœud texte uniquement (ignore les <img>)
       }).text().trim(); // "C1"
-
+ 
       // Heure de la course
       const heureCourse = $container.find('.font-size-caption.text-primary-blue').text().trim();
-
+ 
       // URL construite (les <a> n'ont pas de href dans le HTML rendu)
       const url = numText && reunion_id
         ? `https://www.equidia.fr/courses/${date}/${reunion_id}/${numText}`
         : null;
-
-      console.log(url);
-
+ 
       if (numText) {
+        console.log(url);
         courses.push({ numText, heure: heureCourse, url });
       }
     });
-
-    reunions.push({ reunion_id, hippodrome, date, heure, courses });
+ 
+    reunions.push({ reunion_id, hippodrome, date, heure, live: isLive, courses });
   });
-
+ 
   return reunions;
 }
 
@@ -902,28 +909,79 @@ async function clickByIndex(page, selector, index) {
   }, selector, index);
 }
 
+/**
+ * Attend que le DOM soit totalement débarrassé de toute modale.
+ * On ne teste plus la "visibilité" (offsetParent, display, etc.) car un
+ * élément .modal-body peut rester présent en DOM (contenu déjà vidé par
+ * Angular) pendant l'animation de fermeture, ce qui crée une ambiguïté
+ * avec la modale suivante qui s'ouvre par-dessus.
+ * On veut : querySelectorAll('.modal-body').length === 0
+ */
 async function closeModalIfOpen(page) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const isOpen = await page.$('.modal-body') !== null;
-    if (!isOpen) return true;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const count = await page.$$eval('.modal-body', els => els.length);
+    if (count === 0) return true;
 
-    // Clic natif sur le bouton close (évite les soucis de hit-testing)
+    // Clic natif sur le bouton close
     await page.evaluate(() => {
       const btn = document.querySelector('button[aria-label="Close"]');
       if (btn) btn.click();
     });
 
-    const closed = await page.waitForSelector('.modal-body', { hidden: true, timeout: 3000 })
-      .then(() => true)
-      .catch(() => false);
+    // On attend la disparition COMPLETE du DOM (pas juste "hidden")
+    const closed = await page.waitForFunction(
+      () => document.querySelectorAll('.modal-body').length === 0,
+      { timeout: 4000 }
+    ).then(() => true).catch(() => false);
 
     if (closed) return true;
 
-    // Fallback : touche Escape
+    // Fallback : Escape
     await page.keyboard.press('Escape');
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 600));
   }
-  return (await page.$('.modal-body')) === null;
+
+  const finalCount = await page.$$eval('.modal-body', els => els.length);
+  return finalCount === 0;
+}
+
+/**
+ * Attend qu'exactement UNE modale soit ouverte et que son .nom-cheval
+ * contienne un texte non vide, différent du cheval précédent, ET stable
+ * (relu deux fois à 150ms d'intervalle) pour éviter de capturer un état
+ * transitoire pendant le rendu Angular.
+ */
+async function waitForStableModal(page, previousNom, timeout = 10000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    const count = await page.$$eval('.modal-body', els => els.length);
+
+    if (count === 1) {
+      const nom1 = await page.$eval('.modal-body .nom-cheval', el =>
+        el.textContent.replace(/\s+/g, ' ').trim()
+      ).catch(() => '');
+
+      if (nom1 && nom1 !== previousNom) {
+        await new Promise(r => setTimeout(r, 150));
+
+        const countAfter = await page.$$eval('.modal-body', els => els.length);
+        if (countAfter !== 1) continue; // état instable, on reboucle
+
+        const nom2 = await page.$eval('.modal-body .nom-cheval', el =>
+          el.textContent.replace(/\s+/g, ' ').trim()
+        ).catch(() => '');
+
+        if (nom2 === nom1) {
+          return true; // texte stable sur deux lectures consécutives
+        }
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  return false;
 }
 
 /**
@@ -979,88 +1037,115 @@ async function getCoursePartantsEquidia(hippodrome_course, date_course, reunion_
     const nbPartants = (await page.$$('.table-row.clickable')).length;
     console.log(`Course chargée : ${prix} - ${nbPartants} partants`);
 
+    let previousNom = null;
+
     for (let i = 0; i < nbPartants; i++) {
-      try {
-        // Sécurité : s'assurer qu'aucun modal résiduel n'est ouvert avant de cliquer
-        await closeModalIfOpen(page);
+      let success = false;
 
-        await clickByIndex(page, '.table-row.clickable', i);
-
-        await page.waitForSelector('.modal-body .nom-cheval', { timeout: 10000 });
-        // petite pause pour laisser l'animation/le rendu se stabiliser
-        await new Promise(r => setTimeout(r, 500));
-
-        const htmlModal = await page.content();
-        const $ = cheerio.load(htmlModal);
-        const modal = $('.modal-body');
-
-        const nom = modal.find('.nom-cheval').clone().find('app-favorite-star').remove().end().text().trim();
-        const musique = modal.find('.musique-cheval').text().trim();
-
-        const jockeyEntraineurProprio = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').first());
-        const perePere = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').eq(1));
-
-        const noteEquidia = modal.find('app-final-note .final-note').first().text().trim();
-        const cotePmu = modal.find('.block-cote-graph .info').first().text().replace(/\s+/g, ' ').trim();
-
-        const hrefFiche = modal.find('a.button-complete-display').attr('href');
-        const urlFiche = hrefFiche ? `https://www.equidia.fr${hrefFiche}` : null;
-
-        let infosComplementaires = {};
-        if (urlFiche) {
-          const detailPage = await browser.newPage();
-          try {
-            await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-            await detailPage.goto(urlFiche, { waitUntil: 'networkidle2', timeout: 30000 });
-            await detailPage.waitForSelector('.block-informations', { timeout: 10000 }).catch(() => {});
-            const htmlDetail = await detailPage.content();
-            const $d = cheerio.load(htmlDetail);
-            infosComplementaires = extractLabelValuePairs($d, $d('.block-informations'));
-          } catch (e) {
-            console.warn(`⚠️ Erreur fiche complète pour ${nom}:`, e.message);
-          } finally {
-            await detailPage.close();
+      for (let retry = 0; retry < 3 && !success; retry++) {
+        try {
+          // 1. S'assurer qu'aucune modale ne traîne dans le DOM
+          const closedBefore = await closeModalIfOpen(page);
+          if (!closedBefore) {
+            console.warn(`⚠️ [i=${i}] Impossible de nettoyer le DOM avant clic (retry ${retry})`);
           }
+
+          // 2. Cliquer sur la ligne
+          await clickByIndex(page, '.table-row.clickable', i);
+
+          // 3. Attendre une modale UNIQUE avec un contenu stable
+          const stable = await waitForStableModal(page, previousNom, 10000);
+          if (!stable) {
+            throw new Error('Modale non stabilisée (contenu vide, dupliqué, ou inchangé)');
+          }
+
+          await new Promise(r => setTimeout(r, 200));
+
+          const htmlModal = await page.content();
+          const $ = cheerio.load(htmlModal);
+          const modal = $('.modal-body');
+
+          const nom = modal.find('.nom-cheval').clone().find('app-favorite-star').remove().end().text().trim();
+
+          if (!nom) {
+            throw new Error('Nom vide après extraction cheerio');
+          }
+
+          previousNom = nom;
+
+          const musique = modal.find('.musique-cheval').text().trim();
+
+          const jockeyEntraineurProprio = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').first());
+          const perePere = extractLabelValuePairs($, modal.find('.flex-container-2.block-info-cheval .col-6').eq(1));
+
+          const noteEquidia = modal.find('app-final-note .final-note').first().text().trim();
+          const cotePmu = modal.find('.block-cote-graph .info').first().text().replace(/\s+/g, ' ').trim();
+
+          const hrefFiche = modal.find('a.button-complete-display').attr('href');
+          const urlFiche = hrefFiche ? `https://www.equidia.fr${hrefFiche}` : null;
+
+          let infosComplementaires = {};
+          if (urlFiche) {
+            const detailPage = await browser.newPage();
+            try {
+              await detailPage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+              await detailPage.goto(urlFiche, { waitUntil: 'networkidle2', timeout: 30000 });
+              await detailPage.waitForSelector('.block-informations', { timeout: 10000 }).catch(() => {});
+              const htmlDetail = await detailPage.content();
+              const $d = cheerio.load(htmlDetail);
+              infosComplementaires = extractLabelValuePairs($d, $d('.block-informations'));
+            } catch (e) {
+              console.warn(`⚠️ Erreur fiche complète pour ${nom}:`, e.message);
+            } finally {
+              await detailPage.close();
+            }
+          }
+
+          result.push({
+            nom,
+            naissance: infosComplementaires['Age'] || null,
+            sexe: infosComplementaires['Sexe'] || null,
+            pere: perePere['Père'] || infosComplementaires['Père'] || null,
+            mere: perePere['Mère'] || infosComplementaires['Mère'] || null,
+            discipline,
+            date: date_course,
+            course,
+            prix,
+            hippodrome: hippodrome_course,
+            distance,
+            record: musique,
+            gains: "",
+            reduction: noteEquidia,
+            reduction_date: "",
+            reduction_lieu: "",
+            urlPerfs: urlFiche,
+
+            cote_pmu: cotePmu,
+            jockey: jockeyEntraineurProprio['Jockey'] || null,
+            entraineur: jockeyEntraineurProprio['Entraineur'] || infosComplementaires['Entraineur'] || null,
+            proprietaire: jockeyEntraineurProprio['Propriétaire'] || infosComplementaires['Propriétaire'] || null,
+            peremere: infosComplementaires['Père de la mère'] || null,
+            eleveur: infosComplementaires['Éleveur'] || null,
+            race: infosComplementaires['Race'] || null,
+            robe: infosComplementaires['Robe'] || null
+          });
+
+          console.log(`✔ ${nom} récupéré`);
+
+          const closedAfter = await closeModalIfOpen(page);
+          if (!closedAfter) console.warn(`⚠️ [i=${i}] Modal non fermé après ${nom}`);
+
+          success = true;
+
+        } catch (err) {
+          console.warn(`⚠️ [i=${i}] Échec tentative ${retry}:`, err.message);
+          await closeModalIfOpen(page); // nettoyage avant retry ou passage au suivant
+          await new Promise(r => setTimeout(r, 300));
         }
+      }
 
-        result.push({
-          nom,
-          naissance: infosComplementaires['Age'] || null,
-          sexe: infosComplementaires['Sexe'] || null,
-          pere: perePere['Père'] || infosComplementaires['Père'] || null,
-          mere: perePere['Mère'] || infosComplementaires['Mère'] || null,
-          discipline,
-          date: date_course,
-          course,
-          prix,
-          hippodrome: hippodrome_course,
-          distance,
-          record: musique,
-          gains: "",
-          reduction: noteEquidia,
-          reduction_date: "",
-          reduction_lieu: "",
-          urlPerfs: urlFiche,
-
-          cote_pmu: cotePmu,
-          jockey: jockeyEntraineurProprio['Jockey'] || null,
-          entraineur: jockeyEntraineurProprio['Entraineur'] || infosComplementaires['Entraineur'] || null,
-          proprietaire: jockeyEntraineurProprio['Propriétaire'] || infosComplementaires['Propriétaire'] || null,
-          peremere: infosComplementaires['Père de la mère'] || null,
-          eleveur: infosComplementaires['Éleveur'] || null,
-          race: infosComplementaires['Race'] || null,
-          robe: infosComplementaires['Robe'] || null
-        });
-
-        console.log(`✔ ${nom} récupéré`);
-
-        const closed = await closeModalIfOpen(page);
-        if (!closed) console.warn(`⚠️ Modal non fermé après ${nom}`);
-
-      } catch (err) {
-        console.warn(`⚠️ Échec sur le partant index ${i}:`, err.message);
-        await closeModalIfOpen(page); // on tente de nettoyer avant de continuer
-        continue;
+      if (!success) {
+        console.warn(`❌ [i=${i}] Abandon définitif après 3 tentatives`);
       }
     }
 
