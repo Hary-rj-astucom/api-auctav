@@ -27,8 +27,8 @@ const getPartant = async (req, res) => {
   const cacheKeyEquidia = `partants_equidia_${date}`;
   const TTL = secondsUntilMidnight();
 
-  const cached = getCacheWithTTL(cacheKey, TTL);
-  const cachedEquidia = getCacheWithTTL(cacheKeyEquidia, TTL);
+  const cached = getCacheWithTTL(cacheKey, TTL) || [];
+  const cachedEquidia = getCacheWithTTL(cacheKeyEquidia, TTL) || [];
 
   const sexeMap = {
     "Hongre": "H",
@@ -38,7 +38,7 @@ const getPartant = async (req, res) => {
 
   const flatEquidia = cachedEquidia
     .flat()
-    .filter(h => h.nom && h.nom.trim() !== "")
+    .filter(h => h && h.nom && h.nom.trim() !== "")
     .map(h => ({
       ...h,
       sexe: sexeMap[h.sexe] || h.sexe,
@@ -47,13 +47,13 @@ const getPartant = async (req, res) => {
 
   const cacheResult = [...cached, ...flatEquidia];
 
-  if (cacheResult) {
+  if (cacheResult.length > 0) {
     console.log(`[CACHE] partants ${date}`);
     return res.json(cacheResult);
-  }else{
-    console.log(`[SCRAPE] partants ${date} cache not exist yet`);
-    return res.json({});
   }
+
+  console.log(`[SCRAPE] partants ${date} cache not exist yet`);
+  return res.json([]);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
