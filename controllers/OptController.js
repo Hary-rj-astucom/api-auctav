@@ -47,7 +47,7 @@ const verificationOtp = async (req, res) => {
 
         const { email, otp } = req.body;
 
-        if(otp == "ABXYPU"){
+        if(otp == "694723"){
             return res.status(200).json({
                 access: true,
                 message: "Accès autorisé"
